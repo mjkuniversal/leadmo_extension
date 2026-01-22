@@ -1,0 +1,5 @@
+.idea/
+*.zip
+*.tmp
+.DS_Store
+GEMINI.md

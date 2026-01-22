@@ -1,0 +1,77 @@
+body {
+    width:400px;
+    padding:10px;
+}
+
+.api_box_item {
+    display:block;
+    padding:3px;
+}
+
+.api_box_button {
+    border-radius: 10px;
+    padding:7px 16px;
+    cursor: pointer;
+    background-color: #e4cd00;
+    color:#FFFFFF;
+}
+
+#api_key_box input[type=text] {
+    width:95%;
+}
+#phone_box input[type=text] {
+    width:65%;
+}
+
+#api_key_box input[type=text], #phone_box input[type=text] {
+    margin-bottom:10px;
+    border-radius: 10px;
+    border: 1px solid silver;
+    padding:5px;
+}
+
+#api_keys_dd, #workflows_dd, #tags_dd {
+    border-radius: 10px;
+    border: 1px solid silver;
+    -webkit-box-shadow: none;
+    box-shadow: none;
+    -webkit-border-radius: 18px;
+    padding:5px;
+    margin:5px 0px;
+    cursor: pointer;
+    -webkit-appearance: listbox !important;
+    background-color: #f0f0f0;
+}
+
+#workflows_box, #tags_box {
+    margin-bottom:20px;
+}
+
+#contact_box_left, #contact_box_right {
+    float:left;
+    width:48%;
+}
+
+#contact_box {
+    display:block;
+}
+
+#logo_box {
+    text-align: center;
+}
+
+#logo {
+    width:200px;
+    margin-bottom: 15px;
+}
+
+#notification_message {
+    color:blue;
+}
+
+.select_button {
+    display: block;
+    margin-top:10px;
+    text-align: center;
+    width: fit-content;
+}

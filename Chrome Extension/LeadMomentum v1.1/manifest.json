@@ -1,0 +1,44 @@
+{
+
+    "manifest_version": 3,
+    "name": "LeadMomentum",
+    "version": "1.0",
+
+    "description": "Import contact info from your current CRM into LeadMomentum",
+
+    "icons": {
+        "36": "icons/icon-36.png",
+        "48": "icons/icon-48.png",
+        "72": "icons/icon-72.png",
+        "96": "icons/icon-96.png",
+        "144": "icons/icon-144.png",
+        "192": "icons/icon-192.png",
+        "512": "icons/icon-512.png"
+    },
+
+    "permissions": [
+        "storage"
+    ],
+
+    "background": {
+        "service_worker": "background.js"
+    },
+
+    "host_permissions": [
+        "*://*.api.landlinescrubber.com/*"
+    ],
+
+    "action": {
+        "default_title": "LeadMomentum",
+        "default_icon": "icons/icon-48.png",
+        "default_popup": "popup/index.html"
+    },
+
+    "content_scripts": [
+        {
+            "matches": ["*://*.vanillasoft.net/*", "*://*.onelink.intruity.com/*"],
+            "js": ["jquery.min.js", "content.js"],
+            "all_frames": true
+        }
+    ]
+}

@@ -1,0 +1,11 @@
+#top_banner_notification {
+    position:absolute;
+    top:30px;
+    left:30%;
+    width:40%;
+    z-index:999999999;
+    border:1px solid #000000;
+    padding:5px;
+    text-align: center;
+    background-color: #FFFFFF;
+}
