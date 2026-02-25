@@ -9,12 +9,12 @@ Chrome Extension (Manifest V3, minimum Chrome 116) that scrapes contact data fro
 ```
 leadmo/
 ├── Chrome Extension/
-│   ├── extension36 - need to update to this version/   # Latest source (v2.0)
+│   ├── extension36 - need to update to this version/   # Latest source (v2.1)
 │   │   ├── manifest.json          # MV3 manifest
 │   │   ├── background.js          # Service worker - GHL API calls
 │   │   ├── content.js             # Content script - field detection, pick mode, DOM scraping
 │   │   ├── jquery.min.js          # jQuery 3.6.4
-│   │   ├── style.css              # Content script styles (injected via manifest css)
+│   │   ├── style.css              # Content script styles (injected on demand via scripting API)
 │   │   ├── icons/                 # Extension icons (36-512px)
 │   │   └── popup/
 │   │       ├── index.html         # Popup layout
@@ -45,6 +45,7 @@ leadmo/
 | 1.1 | Added `host_permissions` for LandlineScrubber API |
 | 1.2 | Added sender verification on message listeners, added `host_permissions` for GHL + LandlineScrubber, added `minimum_chrome_version`, commented out console.log debug statements |
 | 2.0 | Universal website support: auto-detect form fields on any site, click-to-select field mapping, per-domain mapping persistence, built-in VanillaSoft/Intruity presets. Content scripts now match `<all_urls>` with CSS injection. |
+| 2.1 | Switched from declarative `content_scripts` to on-demand injection via `activeTab` + `chrome.scripting` API. Eliminates broad host permission CWS warning. Content script and CSS injected only when user opens popup. |
 
 ## Architecture
 
@@ -141,6 +142,7 @@ Works on **any website** with form fields. Auto-detects inputs/selects/textareas
 | Permission | Reason |
 |------------|--------|
 | `storage` | Save API keys and scraped contact data |
+| `activeTab` | Access current tab when user clicks extension icon |
+| `scripting` | Inject content script and CSS on demand |
 | `host_permissions` for `rest.gohighlevel.com` | Cross-origin API calls from service worker |
 | `host_permissions` for `api.landlinescrubber.com` | Cross-origin phone verification from popup |
-| Content scripts on `<all_urls>` | Field detection and DOM scraping on any site |

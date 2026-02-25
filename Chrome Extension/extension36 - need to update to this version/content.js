@@ -1,10 +1,17 @@
 /* ============================================================
-   LeadMomentum Content Script v2.0
+   LeadMomentum Content Script v2.1
+   - Injected on demand via chrome.scripting.executeScript()
    - Field detection with heuristic auto-mapping
    - VanillaSoft / Intruity OneLink presets
    - Click-to-select (pick) mode
    - grabData handler (builds profile_data)
    ============================================================ */
+
+// Guard against double-injection
+if (window._lmContentScriptLoaded) {
+    // Already injected — skip re-initialization
+} else {
+window._lmContentScriptLoaded = true;
 
 // ── Presets ──────────────────────────────────────────────────
 const PRESETS = {
@@ -439,3 +446,5 @@ function format_phone(phone) {
     }
     return phone;
 }
+
+} // end double-injection guard

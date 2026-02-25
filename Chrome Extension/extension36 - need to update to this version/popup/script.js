@@ -72,9 +72,11 @@ $(document).ready(function () {
             currentDomain = "";
         }
 
-        // Check for pending pick result before scanning
-        check_pick_result(function () {
-            scan_page();
+        // Inject content script + CSS on demand, then scan
+        inject_content_script(currentTabId, function () {
+            check_pick_result(function () {
+                scan_page();
+            });
         });
     });
 
@@ -254,6 +256,24 @@ $(document).ready(function () {
         return false;
     });
 });
+
+// ── Inject content script on demand ──────────────────────────
+function inject_content_script(tabId, callback) {
+    chrome.scripting.insertCSS({
+        target: { tabId: tabId, allFrames: true },
+        files: ["style.css"]
+    }).catch(function (err) { console.warn("LeadMomentum: insertCSS failed:", err); });
+
+    chrome.scripting.executeScript({
+        target: { tabId: tabId, allFrames: true },
+        files: ["jquery.min.js", "content.js"]
+    }).then(function () {
+        callback();
+    }).catch(function (err) {
+        console.warn("LeadMomentum: executeScript failed:", err);
+        show_mapping_status("Cannot inject into this page.");
+    });
+}
 
 // ── Scan page for fields ────────────────────────────────────
 function scan_page() {

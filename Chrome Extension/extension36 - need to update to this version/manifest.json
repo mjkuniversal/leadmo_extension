@@ -2,7 +2,7 @@
 
     "manifest_version": 3,
     "name": "LeadMomentum",
-    "version": "2.0",
+    "version": "2.1",
 
     "description": "Import contacts from any website into LeadMomentum (GoHighLevel). Includes phone verification.",
 
@@ -19,7 +19,9 @@
     "minimum_chrome_version": "116",
 
     "permissions": [
-        "storage"
+        "storage",
+        "activeTab",
+        "scripting"
     ],
 
     "host_permissions": [
@@ -35,14 +37,5 @@
         "default_title": "LeadMomentum",
         "default_icon": "icons/icon-48.png",
         "default_popup": "popup/index.html"
-    },
-
-    "content_scripts": [
-        {
-            "matches": ["<all_urls>"],
-            "js": ["jquery.min.js", "content.js"],
-            "css": ["style.css"],
-            "all_frames": true
-        }
-    ]
+    }
 }
