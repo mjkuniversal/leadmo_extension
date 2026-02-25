@@ -1,4 +1,5 @@
 chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (sender.id !== chrome.runtime.id) return;
     if ((msg.from === 'popup') && (msg.subject1 === 'makeApiCall')) {
         sendResponse({});
         chrome.storage.local.get(['selected_api_key'], function (data) {

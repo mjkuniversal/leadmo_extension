@@ -2,7 +2,7 @@
 
     "manifest_version": 3,
     "name": "LeadMomentum",
-    "version": "1.0",
+    "version": "1.2",
 
     "description": "Import contact info from your current CRM into LeadMomentum",
 
@@ -16,8 +16,15 @@
         "512": "icons/icon-512.png"
     },
 
+    "minimum_chrome_version": "116",
+
     "permissions": [
         "storage"
+    ],
+
+    "host_permissions": [
+        "https://rest.gohighlevel.com/*",
+        "https://api.landlinescrubber.com/*"
     ],
 
     "background": {
