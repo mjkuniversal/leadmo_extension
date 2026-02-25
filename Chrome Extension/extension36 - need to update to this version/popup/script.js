@@ -1,3 +1,17 @@
+/* ============================================================
+   LeadMomentum Popup v2.0
+   - Field detection + mapping dropdowns
+   - Click-to-select relay (survives popup close)
+   - Per-domain mapping persistence
+   - Existing API key / workflow / tag / phone check preserved
+   ============================================================ */
+
+// Tracks the current tab's domain and detected fields
+let currentDomain = "";
+let currentTabId = null;
+let detectedFields = [];
+
+// ── Message listener (from background + content) ────────────
 chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     if ((msg.from === 'background') && (msg.subject === 'loadWorkflows')) {
         sendResponse({});
@@ -29,20 +43,109 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
             $("#notification_message").remove();
         }, 2500);
     }
-
 });
 
+// ── Document ready ──────────────────────────────────────────
 $(document).ready(function () {
 
     load_api_keys();
 
-    chrome.tabs.query({
-        active: true,
-        currentWindow: true
-    }, function (tabs) {
-        chrome.tabs.sendMessage(tabs[0].id, {subject: 'getLeadData'});
+    // Get active tab, then trigger field detection
+    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+        if (!tabs || !tabs[0]) {
+            show_mapping_status("No active tab found.");
+            return;
+        }
+
+        let tab = tabs[0];
+        currentTabId = tab.id;
+
+        // Can't inject into chrome:// or extension pages
+        if (!tab.url || tab.url.startsWith("chrome://") || tab.url.startsWith("chrome-extension://")) {
+            show_mapping_status("Cannot scan this page.");
+            return;
+        }
+
+        try {
+            currentDomain = new URL(tab.url).hostname;
+        } catch (e) {
+            currentDomain = "";
+        }
+
+        // Check for pending pick result before scanning
+        check_pick_result(function () {
+            scan_page();
+        });
     });
 
+    // ── Rescan button ───────────────────────────────────────
+    $("#rescan_btn").click(function () {
+        scan_page();
+        return false;
+    });
+
+    // ── Grab Data button ────────────────────────────────────
+    $("#grab_data_btn").click(function () {
+        let mappings = collect_mappings();
+        chrome.tabs.sendMessage(currentTabId, {
+            subject: "grabData",
+            mappings: mappings
+        });
+        return false;
+    });
+
+    // ── Save Mapping button ─────────────────────────────────
+    $("#save_mapping_btn").click(function () {
+        if (!currentDomain) return false;
+        let mappings = collect_mappings();
+        save_domain_mapping(currentDomain, mappings);
+        show_mapping_status("Mapping saved for " + currentDomain);
+        return false;
+    });
+
+    // ── Clear Mapping button ────────────────────────────────
+    $("#clear_mapping_btn").click(function () {
+        if (!currentDomain) return false;
+        clear_domain_mapping(currentDomain);
+        // Reset all dropdowns to empty
+        $("#mapping_table .mapping_dd").val("");
+        $(".field_preview").text("");
+        show_mapping_status("Mapping cleared for " + currentDomain);
+        return false;
+    });
+
+    // ── Pick buttons ────────────────────────────────────────
+    $("#mapping_table").on("click", ".pick_btn", function () {
+        let row = $(this).closest("tr");
+        let fieldKey = row.data("field");
+
+        // Save pick state so we can recover after popup closes
+        chrome.storage.local.set({
+            lm_pick_state: { active: true, fieldKey: fieldKey, domain: currentDomain, result: null }
+        }, function () {
+            chrome.tabs.sendMessage(currentTabId, {
+                subject: "startPicking",
+                fieldKey: fieldKey
+            });
+            // Popup will close when user clicks the page
+        });
+        return false;
+    });
+
+    // ── Dropdown change → update preview ────────────────────
+    $("#mapping_table").on("change", ".mapping_dd", function () {
+        let row = $(this).closest("tr");
+        let selector = $(this).val();
+        let preview = row.find(".field_preview");
+        if (selector) {
+            let field = find_field_by_selector(selector);
+            preview.text(field ? field.currentValue : "");
+        } else {
+            preview.text("");
+        }
+    });
+
+    // ── Existing handlers (unchanged) ───────────────────────
 
     $("#save_api_key").click(function () {
         let api_key = $('#api_key').val().trim();
@@ -74,7 +177,6 @@ $(document).ready(function () {
                 });
             });
         }
-
         return false;
     });
 
@@ -136,16 +238,13 @@ $(document).ready(function () {
                     if (response["blacklist"] === true) {
                         dnc = "yes";
                     }
-
                     $("#dnc").text(dnc);
 
                     let linetype = "";
                     if (response["linetype"]) {
                         linetype = response["linetype"];
                     }
-
                     $("#linetype").text(linetype);
-
                 },
                 error: function (xhr, ajaxOptions, thrownError) {
                     alert("Error status:" + xhr.status + "\n" + "Error message:" + thrownError);
@@ -155,6 +254,180 @@ $(document).ready(function () {
         return false;
     });
 });
+
+// ── Scan page for fields ────────────────────────────────────
+function scan_page() {
+    if (!currentTabId) return;
+
+    show_mapping_status("Scanning...");
+    chrome.tabs.sendMessage(currentTabId, { subject: "detectFields" }, function (response) {
+        if (chrome.runtime.lastError) {
+            show_mapping_status("Cannot scan this page (content script not loaded).");
+            return;
+        }
+        if (!response || !response.fields) {
+            show_mapping_status("No fields detected.");
+            return;
+        }
+
+        detectedFields = response.fields;
+        let autoMap = response.autoMap || {};
+
+        populate_dropdowns(detectedFields);
+
+        // Try loading saved mapping first, fall back to auto-map
+        load_saved_mapping(currentDomain, function (savedMapping) {
+            if (savedMapping) {
+                apply_mapping(savedMapping);
+                show_mapping_status(detectedFields.length + " fields found. Saved mapping loaded.");
+            } else {
+                apply_mapping(autoMap);
+                let mapped = Object.keys(autoMap).length;
+                show_mapping_status(detectedFields.length + " fields found, " + mapped + " auto-mapped.");
+            }
+        });
+    });
+}
+
+// ── Populate dropdowns with detected fields ─────────────────
+function populate_dropdowns(fields) {
+    let options = '<option value="">— none —</option>';
+    for (let i = 0; i < fields.length; i++) {
+        let f = fields[i];
+        let display = f.label || f.name || f.id || f.placeholder || f.selector;
+        // Truncate long labels
+        if (display.length > 40) display = display.substring(0, 37) + "...";
+        let valHint = f.currentValue ? " [" + f.currentValue.substring(0, 20) + "]" : "";
+        // Escape HTML
+        let safeDisplay = $("<span>").text(display + valHint).html();
+        let safeSelector = $("<span>").text(f.selector).html();
+        options += '<option value="' + safeSelector + '">' + safeDisplay + '</option>';
+    }
+
+    $("#mapping_table .mapping_dd").each(function () {
+        $(this).html(options);
+    });
+}
+
+// ── Apply a mapping object to the dropdowns ─────────────────
+function apply_mapping(mapping) {
+    for (let fieldKey in mapping) {
+        let selector = mapping[fieldKey];
+        if (!selector) continue;
+        let row = $('#mapping_table tr[data-field="' + fieldKey + '"]');
+        if (row.length) {
+            row.find(".mapping_dd").val(selector);
+            let field = find_field_by_selector(selector);
+            row.find(".field_preview").text(field ? field.currentValue : "");
+        }
+    }
+}
+
+// ── Collect current dropdown selections into a mapping ──────
+function collect_mappings() {
+    let mappings = {};
+    $("#mapping_table tbody tr").each(function () {
+        let fieldKey = $(this).data("field");
+        let selector = $(this).find(".mapping_dd").val();
+        if (fieldKey && selector) {
+            mappings[fieldKey] = selector;
+        }
+    });
+    return mappings;
+}
+
+// ── Find a detected field by its selector ───────────────────
+function find_field_by_selector(selector) {
+    for (let i = 0; i < detectedFields.length; i++) {
+        if (detectedFields[i].selector === selector) return detectedFields[i];
+    }
+    return null;
+}
+
+// ── Show status text below the Contact heading ──────────────
+function show_mapping_status(text) {
+    $("#mapping_status").text(text);
+}
+
+// ── Check for pending pick result ───────────────────────────
+function check_pick_result(callback) {
+    chrome.storage.local.get(["lm_pick_state"], function (data) {
+        let state = data.lm_pick_state;
+        if (state && !state.active && state.result && state.fieldKey) {
+            // We have a pick result from a previous popup session
+            // Store it so we can apply after scan
+            let fieldKey = state.fieldKey;
+            let result = state.result;
+
+            // Clear the pick state
+            chrome.storage.local.remove("lm_pick_state", function () {
+                // After scan completes, apply the pick result
+                let originalCallback = callback;
+                callback = function () {};
+                originalCallback();
+
+                // Wait a tick for scan_page to finish populating
+                setTimeout(function () {
+                    // Add the picked element to the dropdown if not already there
+                    let row = $('#mapping_table tr[data-field="' + fieldKey + '"]');
+                    if (row.length) {
+                        let dd = row.find(".mapping_dd");
+                        // Check if this selector is already an option
+                        if (dd.find('option[value="' + CSS.escape(result.selector) + '"]').length === 0) {
+                            let display = result.displayName || result.selector;
+                            let valHint = result.currentValue ? " [" + result.currentValue.substring(0, 20) + "]" : "";
+                            let safeDisplay = $("<span>").text(display + valHint).html();
+                            let safeSelector = $("<span>").text(result.selector).html();
+                            dd.append('<option value="' + safeSelector + '">' + safeDisplay + '</option>');
+                            // Also add to detectedFields
+                            detectedFields.push({
+                                selector: result.selector,
+                                label: result.displayName,
+                                name: "",
+                                id: "",
+                                placeholder: "",
+                                tagName: "",
+                                type: "",
+                                currentValue: result.currentValue || ""
+                            });
+                        }
+                        dd.val(result.selector);
+                        row.find(".field_preview").text(result.currentValue || "");
+                        show_mapping_status("Picked element applied to " + fieldKey.replace(/_/g, " ") + ".");
+                    }
+                }, 500);
+            });
+            return;
+        }
+        callback();
+    });
+}
+
+// ── Domain mapping persistence ──────────────────────────────
+function save_domain_mapping(domain, mappings) {
+    chrome.storage.local.get(["lm_domain_mappings"], function (data) {
+        let all = data.lm_domain_mappings || {};
+        all[domain] = mappings;
+        chrome.storage.local.set({ lm_domain_mappings: all });
+    });
+}
+
+function load_saved_mapping(domain, callback) {
+    chrome.storage.local.get(["lm_domain_mappings"], function (data) {
+        let all = data.lm_domain_mappings || {};
+        callback(all[domain] || null);
+    });
+}
+
+function clear_domain_mapping(domain) {
+    chrome.storage.local.get(["lm_domain_mappings"], function (data) {
+        let all = data.lm_domain_mappings || {};
+        delete all[domain];
+        chrome.storage.local.set({ lm_domain_mappings: all });
+    });
+}
+
+// ── Existing functions (unchanged) ──────────────────────────
 
 function load_api_keys() {
     $("#api_keys_dd").remove();
@@ -216,9 +489,12 @@ function load_tags(tags) {
 
 function load_contact_data() {
     chrome.storage.local.get(['profile_data'], function (data) {
-        let profile_data = {}
+        let profile_data = {};
         if (data['profile_data'] && (data['profile_data'] != 'undefined'))
             profile_data = data['profile_data'];
+
+        // Show the contact preview section
+        $("#contact_preview").show();
 
         $("#first_name").text(profile_data["first_name"]);
         $("#last_name").text(profile_data["last_name"]);

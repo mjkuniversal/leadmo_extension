@@ -2,9 +2,9 @@
 
     "manifest_version": 3,
     "name": "LeadMomentum",
-    "version": "1.2",
+    "version": "2.0",
 
-    "description": "Import contact info from your current CRM into LeadMomentum",
+    "description": "Import contacts from any website into LeadMomentum (GoHighLevel). Includes phone verification.",
 
     "icons": {
         "36": "icons/icon-36.png",
@@ -39,8 +39,9 @@
 
     "content_scripts": [
         {
-            "matches": ["*://*.vanillasoft.net/*", "*://*.onelink.intruity.com/*"],
+            "matches": ["<all_urls>"],
             "js": ["jquery.min.js", "content.js"],
+            "css": ["style.css"],
             "all_frames": true
         }
     ]

@@ -2,19 +2,19 @@
 
 ## Project Overview
 
-Chrome Extension (Manifest V3, minimum Chrome 116) that scrapes contact data from CRM platforms (VanillaSoft, Intruity OneLink) and imports it into LeadMomentum/GoHighLevel. Includes phone verification via LandlineScrubber API.
+Chrome Extension (Manifest V3, minimum Chrome 116) that scrapes contact data from **any website** and imports it into LeadMomentum/GoHighLevel. Auto-detects form fields with heuristic mapping, supports click-to-select for manual field assignment, and includes built-in presets for VanillaSoft and Intruity OneLink. Includes phone verification via LandlineScrubber API.
 
 ## Directory Structure
 
 ```
 leadmo/
 ├── Chrome Extension/
-│   ├── extension36 - need to update to this version/   # Latest source (v1.2)
+│   ├── extension36 - need to update to this version/   # Latest source (v2.0)
 │   │   ├── manifest.json          # MV3 manifest
 │   │   ├── background.js          # Service worker - GHL API calls
-│   │   ├── content.js             # Content script - DOM scraping
+│   │   ├── content.js             # Content script - field detection, pick mode, DOM scraping
 │   │   ├── jquery.min.js          # jQuery 3.6.4
-│   │   ├── style.css              # Content script styles
+│   │   ├── style.css              # Content script styles (injected via manifest css)
 │   │   ├── icons/                 # Extension icons (36-512px)
 │   │   └── popup/
 │   │       ├── index.html         # Popup layout
@@ -44,6 +44,7 @@ leadmo/
 | 1.0 | Initial Chrome Web Store release |
 | 1.1 | Added `host_permissions` for LandlineScrubber API |
 | 1.2 | Added sender verification on message listeners, added `host_permissions` for GHL + LandlineScrubber, added `minimum_chrome_version`, commented out console.log debug statements |
+| 2.0 | Universal website support: auto-detect form fields on any site, click-to-select field mapping, per-domain mapping persistence, built-in VanillaSoft/Intruity presets. Content scripts now match `<all_urls>` with CSS injection. |
 
 ## Architecture
 
@@ -65,7 +66,11 @@ All `onMessage` listeners verify `sender.id === chrome.runtime.id` to reject mes
 
 | From | Subject | Purpose |
 |------|---------|---------|
-| popup → content | `getLeadData` | Trigger DOM scraping |
+| popup → content | `detectFields` | Scan page for form fields, return descriptors with auto-mapping |
+| popup → content | `startPicking` | Enter click-to-select mode (highlight on hover) |
+| popup → content | `cancelPicking` | Exit pick mode, remove highlights |
+| popup → content | `grabData` | Read field values via mappings, save `profile_data` |
+| content → popup | `fieldsDetected` | Return detected fields with labels and suggested mappings |
 | content → popup | `loadContactData` | Notify data is ready in storage |
 | popup → background | `makeApiCall` / `getWorkflowsAndTags` | Fetch workflows + tags from GHL |
 | popup → background | `makeApiCall` / `sendToLeadmomentum` | Create contact in GHL |
@@ -83,10 +88,16 @@ All `onMessage` listeners verify `sender.id === chrome.runtime.id` to reject mes
 | `selected_api_key` | `string` | Currently active API key |
 | `profile_data` | `object` | Scraped contact data (PII) |
 | `landlinescrubber_api_key` | `string` | Phone verification API key |
+| `lm_domain_mappings` | `{domain: {field: {selector}}}` | Saved per-domain field mappings |
+| `lm_pick_state` | `{active, fieldKey, domain, result}` | Transient click-to-select state |
 
 **Security note:** API keys and contact PII are stored unencrypted in `chrome.storage.local`. This storage is sandboxed to the extension but is not encrypted at rest. Data persists until the extension is uninstalled or storage is manually cleared.
 
-### Supported CRMs
+### Supported Sites
+
+Works on **any website** with form fields. Auto-detects inputs/selects/textareas and applies heuristic keyword matching (e.g., fields named "first_name", "fname", etc.). Users can manually map fields via click-to-select and save mappings per domain.
+
+#### Built-in Presets
 
 | Platform | URL Pattern | Fields Scraped |
 |----------|-------------|----------------|
@@ -132,4 +143,4 @@ All `onMessage` listeners verify `sender.id === chrome.runtime.id` to reject mes
 | `storage` | Save API keys and scraped contact data |
 | `host_permissions` for `rest.gohighlevel.com` | Cross-origin API calls from service worker |
 | `host_permissions` for `api.landlinescrubber.com` | Cross-origin phone verification from popup |
-| Content scripts on `vanillasoft.net`, `onelink.intruity.com` | DOM scraping |
+| Content scripts on `<all_urls>` | Field detection and DOM scraping on any site |
