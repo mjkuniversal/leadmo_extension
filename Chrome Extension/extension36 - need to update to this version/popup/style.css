@@ -193,3 +193,30 @@ body {
     margin: 0 0 6px 0;
     font-size: 13px;
 }
+
+/* ── Survey section ────────────────────────────────────── */
+
+#survey_box input[type=text] {
+    width: 95%;
+    margin-bottom: 10px;
+    border-radius: 10px;
+    border: 1px solid silver;
+    padding: 5px;
+}
+
+#survey_actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+#survey_actions .api_box_button {
+    font-size: 12px;
+    padding: 5px 12px;
+}
+
+#survey_status {
+    font-size: 11px;
+    color: #888;
+    margin: 2px 0 0 0;
+}

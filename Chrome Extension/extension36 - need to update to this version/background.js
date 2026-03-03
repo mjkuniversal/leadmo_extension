@@ -1,7 +1,6 @@
 chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     if (sender.id !== chrome.runtime.id) return;
     if ((msg.from === 'popup') && (msg.subject1 === 'makeApiCall')) {
-        sendResponse({});
         chrome.storage.local.get(['selected_api_key'], function (data) {
             let selected_api_key = 0;
             if (data['selected_api_key'] && (data['selected_api_key'] != 'undefined'))
@@ -9,49 +8,32 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
 
             if (selected_api_key) {
                 if (msg.subject2 === 'getWorkflowsAndTags') {
-                    fetch("https://rest.gohighlevel.com/v1/workflows/", {
-                        headers: {
-                            'Authorization': 'Bearer ' + selected_api_key,
-                            'Content-Type': 'application/json'
-                        },
-                        method: 'GET'
-                    }).then(response => response.json()).then(data => {
-                        //console.log(data);
-                        let workflows = [];
-                        if (data['workflows']) {
-                            workflows = data['workflows'];
-                        }
-                        chrome.runtime.sendMessage({
-                            from: 'background',
-                            subject: 'loadWorkflows',
-                            workflows: workflows
+                    let headers = {
+                        'Authorization': 'Bearer ' + selected_api_key,
+                        'Content-Type': 'application/json'
+                    };
+                    Promise.all([
+                        fetch("https://rest.gohighlevel.com/v1/workflows/", {
+                            headers: headers,
+                            method: 'GET'
+                        }).then(response => response.json()).catch(() => ({})),
+                        fetch("https://rest.gohighlevel.com/v1/tags/", {
+                            headers: headers,
+                            method: 'GET'
+                        }).then(response => response.json()).catch(() => ({}))
+                    ]).then(([workflowData, tagData]) => {
+                        sendResponse({
+                            workflows: workflowData['workflows'] || [],
+                            tags: tagData['tags'] || []
                         });
                     }).catch(error => {
                         console.log(error);
-                    });
-
-                    fetch("https://rest.gohighlevel.com/v1/tags/", {
-                        headers: {
-                            'Authorization': 'Bearer ' + selected_api_key,
-                            'Content-Type': 'application/json'
-                        },
-                        method: 'GET'
-                    }).then(response => response.json()).then(data => {
-                        let tags = [];
-                        if (data['tags']) {
-                            tags = data['tags'];
-                        }
-                        chrome.runtime.sendMessage({
-                            from: 'background',
-                            subject: 'loadTags',
-                            tags: tags
-                        });
-                    }).catch(error => {
-                        console.log(error);
+                        sendResponse({ workflows: [], tags: [] });
                     });
                 }
 
                 if (msg.subject2 === 'sendToLeadmomentum') {
+                    sendResponse({});
                     let tag = "";
                     if (msg.tag) {
                         tag = msg.tag;
@@ -60,6 +42,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
                 }
 
                 if (msg.subject2 === 'addWorkflow') {
+                    sendResponse({});
                     let tag = "";
                     if (msg.tag) {
                         tag = msg.tag;
@@ -67,8 +50,11 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
                     let workflow_id = msg.workflow_id;
                     create_contact(tag, workflow_id, selected_api_key);
                 }
+            } else {
+                sendResponse({});
             }
         });
+        return true; // keep message channel open for async sendResponse
     }
 });
 
@@ -84,10 +70,19 @@ function create_contact(tag, workflow_id, selected_api_key) {
         if (data['profile_data'] && (data['profile_data'] != 'undefined'))
             profile_data = data['profile_data'];
 
+        // Split full_name into first/last if individual fields are empty
+        let firstName = profile_data["first_name"] || "";
+        let lastName = profile_data["last_name"] || "";
+        if (profile_data["full_name"] && !firstName && !lastName) {
+            let nameParts = profile_data["full_name"].trim().split(/\s+/);
+            firstName = nameParts.shift() || "";
+            lastName = nameParts.join(" ") || "";
+        }
+
         let create_contact_data = {
-            "firstName": profile_data["first_name"],
-            "lastName": profile_data["last_name"],
-            "name": profile_data["first_name"] + " " + profile_data["last_name"],
+            "firstName": firstName,
+            "lastName": lastName,
+            "name": profile_data["full_name"] || (firstName + " " + lastName).trim(),
             "email": profile_data["email"],
             "phone": profile_data["phone"],
             "dateOfBirth": profile_data["birthdate"],

@@ -2,14 +2,14 @@
 
 ## Project Overview
 
-Chrome Extension (Manifest V3, minimum Chrome 116) that scrapes contact data from **any website** and imports it into LeadMomentum/GoHighLevel. Auto-detects form fields with heuristic mapping, supports click-to-select for manual field assignment, and includes built-in presets for VanillaSoft and Intruity OneLink. Includes phone verification via LandlineScrubber API.
+Chrome Extension (Manifest V3, minimum Chrome 116) that scrapes contact data from **any website** and imports it into LeadMomentum/GoHighLevel. Auto-detects form fields with heuristic mapping, supports click-to-select for manual field assignment, and includes built-in presets for VanillaSoft and Intruity OneLink. Includes phone verification via LandlineScrubber API and GHL survey pre-fill integration.
 
 ## Directory Structure
 
 ```
 leadmo/
 ├── Chrome Extension/
-│   ├── extension36 - need to update to this version/   # Latest source (v2.1)
+│   ├── extension36 - need to update to this version/   # Latest source (v3.0)
 │   │   ├── manifest.json          # MV3 manifest
 │   │   ├── background.js          # Service worker - GHL API calls
 │   │   ├── content.js             # Content script - field detection, pick mode, DOM scraping
@@ -46,6 +46,7 @@ leadmo/
 | 1.2 | Added sender verification on message listeners, added `host_permissions` for GHL + LandlineScrubber, added `minimum_chrome_version`, commented out console.log debug statements |
 | 2.0 | Universal website support: auto-detect form fields on any site, click-to-select field mapping, per-domain mapping persistence, built-in VanillaSoft/Intruity presets. Content scripts now match `<all_urls>` with CSS injection. |
 | 2.1 | Switched from declarative `content_scripts` to on-demand injection via `activeTab` + `chrome.scripting` API. Eliminates broad host permission CWS warning. Content script and CSS injected only when user opens popup. |
+| 3.0 | Added GHL survey integration: save a survey URL, open it in a new tab with scraped contact data pre-filled as query parameters. |
 
 ## Architecture
 
@@ -91,6 +92,7 @@ All `onMessage` listeners verify `sender.id === chrome.runtime.id` to reject mes
 | `landlinescrubber_api_key` | `string` | Phone verification API key |
 | `lm_domain_mappings` | `{domain: {field: {selector}}}` | Saved per-domain field mappings |
 | `lm_pick_state` | `{active, fieldKey, domain, result}` | Transient click-to-select state |
+| `survey_url` | `string` | User's GHL survey base URL |
 
 **Security note:** API keys and contact PII are stored unencrypted in `chrome.storage.local`. This storage is sandboxed to the extension but is not encrypted at rest. Data persists until the extension is uninstalled or storage is manually cleared.
 
@@ -135,7 +137,8 @@ Works on **any website** with form fields. Auto-detects inputs/selects/textareas
 
 1. Open extension popup
 2. Enter API name + GoHighLevel API key → click **Add** → **Select**
-3. (Optional) Enter LandlineScrubber API key for phone verification
+3. (Optional) Paste GHL survey URL → click **Save URL** (enables Open Survey button)
+4. (Optional) Enter LandlineScrubber API key for phone verification
 
 ### Permissions
 

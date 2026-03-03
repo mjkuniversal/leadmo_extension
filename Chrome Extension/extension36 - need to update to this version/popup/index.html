@@ -25,6 +25,12 @@
                         </tr>
                     </thead>
                     <tbody>
+                        <tr data-field="full_name">
+                            <td class="field_label">Full Name</td>
+                            <td><select class="mapping_dd"></select></td>
+                            <td><a class="pick_btn" title="Click to select on page">Pick</a></td>
+                            <td class="field_preview"></td>
+                        </tr>
                         <tr data-field="first_name">
                             <td class="field_label">First Name</td>
                             <td><select class="mapping_dd"></select></td>
@@ -95,6 +101,7 @@
                 <div id="contact_preview" style="display:none;">
                     <h4>Grabbed Contact</h4>
                     <div id="contact_box_left">
+                        <p><b>Full name:</b> <span id="full_name"></span></p>
                         <p><b>First name:</b> <span id="first_name"></span></p>
                         <p><b>Last name:</b> <span id="last_name"></span></p>
                         <p><b>Phone:</b> <span id="phone"></span></p>
@@ -111,6 +118,16 @@
                 </div>
             </div>
             <div style="clear:both;"></div>
+            <br /><hr /><br />
+            <div id="survey_box">
+                <label>GHL Survey</label><br />
+                <input type="text" id="survey_url" placeholder="Paste your GHL survey URL" />
+                <div id="survey_actions">
+                    <a id="save_survey_url" class="api_box_button">Save URL</a>
+                    <a id="open_survey_btn" class="api_box_button">Open Survey</a>
+                </div>
+                <p id="survey_status"></p>
+            </div>
             <br /><hr /><br />
             <div id="tags_box">
                 <label>Tags</label><br />

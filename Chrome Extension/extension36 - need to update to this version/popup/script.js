@@ -6,6 +6,19 @@
    - Existing API key / workflow / tag / phone check preserved
    ============================================================ */
 
+// Maps profile_data keys → GHL survey query parameter names
+const SURVEY_PARAM_MAP = {
+    first_name: "first_name",
+    last_name: "last_name",
+    phone: "phone",
+    email: "email",
+    birthdate: "date_of_birth",
+    address: "address1",
+    city: "city",
+    state: "state",
+    zipcode: "postal_code"
+};
+
 // Tracks the current tab's domain and detected fields
 let currentDomain = "";
 let currentTabId = null;
@@ -13,16 +26,6 @@ let detectedFields = [];
 
 // ── Message listener (from background + content) ────────────
 chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
-    if ((msg.from === 'background') && (msg.subject === 'loadWorkflows')) {
-        sendResponse({});
-        load_workflows(msg.workflows);
-    }
-
-    if ((msg.from === 'background') && (msg.subject === 'loadTags')) {
-        sendResponse({});
-        load_tags(msg.tags);
-    }
-
     if ((msg.from === 'content') && (msg.subject === 'loadContactData')) {
         sendResponse({});
         load_contact_data();
@@ -49,6 +52,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
 $(document).ready(function () {
 
     load_api_keys();
+    load_survey_url();
 
     // Get active tab, then trigger field detection
     chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
@@ -187,11 +191,7 @@ $(document).ready(function () {
         chrome.storage.local.set({
             selected_api_key: selected_api_key
         }, function () {
-            chrome.runtime.sendMessage({
-                from: 'popup',
-                subject1: 'makeApiCall',
-                subject2: 'getWorkflowsAndTags'
-            });
+            fetch_workflows_and_tags();
             $("#api_key_items").prepend('<p id="notification_message">' + $("#api_keys_dd option:selected").text() + ' account selected</p>');
             setTimeout(function () {
                 $("#notification_message").remove();
@@ -252,6 +252,67 @@ $(document).ready(function () {
                     alert("Error status:" + xhr.status + "\n" + "Error message:" + thrownError);
                 }
             });
+        });
+        return false;
+    });
+
+    // ── Save Survey URL button ────────────────────────────────
+    $("#save_survey_url").click(function () {
+        let url = $("#survey_url").val().trim();
+        if (!url) {
+            $("#survey_status").text("Please enter a survey URL.");
+            return false;
+        }
+        try {
+            let parsed = new URL(url);
+            if (parsed.protocol !== "https:") {
+                $("#survey_status").text("Survey URL must use https://");
+                return false;
+            }
+        } catch (e) {
+            $("#survey_status").text("Invalid URL.");
+            return false;
+        }
+        chrome.storage.local.set({ survey_url: url }, function () {
+            $("#survey_status").text("Survey URL saved.");
+            setTimeout(function () { $("#survey_status").text(""); }, 2500);
+        });
+        return false;
+    });
+
+    // ── Open Survey button ────────────────────────────────────
+    $("#open_survey_btn").click(function () {
+        chrome.storage.local.get(["survey_url", "profile_data"], function (data) {
+            let baseUrl = data.survey_url;
+            if (!baseUrl) {
+                $("#survey_status").text("No survey URL saved. Paste one and click Save URL.");
+                return;
+            }
+
+            let profile = data.profile_data || {};
+
+            // If only full_name is set, split into first/last
+            if (profile.full_name && !profile.first_name && !profile.last_name) {
+                let nameParts = profile.full_name.trim().split(/\s+/);
+                profile.first_name = nameParts.shift() || "";
+                profile.last_name = nameParts.join(" ") || "";
+            }
+
+            let surveyUrl;
+            try {
+                surveyUrl = new URL(baseUrl);
+            } catch (e) {
+                $("#survey_status").text("Saved survey URL is invalid.");
+                return;
+            }
+            for (let key in SURVEY_PARAM_MAP) {
+                let value = profile[key];
+                if (value) {
+                    surveyUrl.searchParams.set(SURVEY_PARAM_MAP[key], value);
+                }
+            }
+
+            chrome.tabs.create({ url: surveyUrl.href });
         });
         return false;
     });
@@ -447,6 +508,33 @@ function clear_domain_mapping(domain) {
     });
 }
 
+// ── Survey URL persistence ───────────────────────────────────
+
+function load_survey_url() {
+    chrome.storage.local.get(["survey_url"], function (data) {
+        if (data.survey_url) {
+            $("#survey_url").val(data.survey_url);
+        }
+    });
+}
+
+// ── Fetch workflows and tags from background ─────────────────
+
+function fetch_workflows_and_tags() {
+    chrome.runtime.sendMessage({
+        from: 'popup',
+        subject1: 'makeApiCall',
+        subject2: 'getWorkflowsAndTags'
+    }, function (response) {
+        if (response && response.workflows) {
+            load_workflows(response.workflows);
+        }
+        if (response && response.tags) {
+            load_tags(response.tags);
+        }
+    });
+}
+
 // ── Existing functions (unchanged) ──────────────────────────
 
 function load_api_keys() {
@@ -471,11 +559,7 @@ function load_api_keys() {
         }
 
         if (selected_api_key) {
-            chrome.runtime.sendMessage({
-                from: 'popup',
-                subject1: 'makeApiCall',
-                subject2: 'getWorkflowsAndTags'
-            });
+            fetch_workflows_and_tags();
             $("#api_keys_dd").val(selected_api_key);
         }
 
@@ -516,6 +600,7 @@ function load_contact_data() {
         // Show the contact preview section
         $("#contact_preview").show();
 
+        $("#full_name").text(profile_data["full_name"]);
         $("#first_name").text(profile_data["first_name"]);
         $("#last_name").text(profile_data["last_name"]);
         $("#phone").text(profile_data["phone"]);

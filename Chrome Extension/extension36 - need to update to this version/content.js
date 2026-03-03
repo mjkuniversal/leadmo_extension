@@ -48,6 +48,7 @@ const PRESETS = {
 
 // ── Heuristic keyword patterns ──────────────────────────────
 const FIELD_PATTERNS = {
+    full_name:  /^name$|full.?name|contact.?name|your.?name/i,
     first_name: /first.?name|fname|given.?name/i,
     last_name:  /last.?name|lname|surname|family.?name/i,
     phone:      /phone|mobile|cell|tel/i,
@@ -362,6 +363,7 @@ function pick_keydown(e) {
 // ── Grab data ───────────────────────────────────────────────
 function grab_data(mappings) {
     let profile_data = {
+        full_name: "",
         first_name: "",
         last_name: "",
         phone: "",
