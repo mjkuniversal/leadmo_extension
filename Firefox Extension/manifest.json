@@ -1,0 +1,46 @@
+{
+
+    "manifest_version": 3,
+    "name": "LeadMomentum",
+    "version": "3.0",
+
+    "description": "Import contacts from any website into LeadMomentum (GoHighLevel). Includes phone verification.",
+
+    "icons": {
+        "36": "icons/icon-36.png",
+        "48": "icons/icon-48.png",
+        "72": "icons/icon-72.png",
+        "96": "icons/icon-96.png",
+        "144": "icons/icon-144.png",
+        "192": "icons/icon-192.png",
+        "512": "icons/icon-512.png"
+    },
+
+    "browser_specific_settings": {
+        "gecko": {
+            "id": "leadmomentum@leadmomentum.com",
+            "strict_min_version": "109.0"
+        }
+    },
+
+    "permissions": [
+        "storage",
+        "activeTab",
+        "scripting"
+    ],
+
+    "host_permissions": [
+        "https://rest.gohighlevel.com/*",
+        "https://api.landlinescrubber.com/*"
+    ],
+
+    "background": {
+        "scripts": ["browser-polyfill.min.js", "background.js"]
+    },
+
+    "action": {
+        "default_title": "LeadMomentum",
+        "default_icon": "icons/icon-48.png",
+        "default_popup": "popup/index.html"
+    }
+}

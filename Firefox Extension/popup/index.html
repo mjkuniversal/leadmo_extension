@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title></title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" type="text/css" href="select2.min.css" />
+        <link rel="stylesheet" type="text/css" href="style.css" />
+    </head>
+    <body>
+        <div id="wrapper">
+            <div id="logo_box">
+                <img src="logo.png" id="logo" />
+            </div>
+            <div id="contact_box">
+                <h3>Contact <a id="rescan_btn" class="rescan_button">Scan</a></h3>
+                <p id="mapping_status"></p>
+                <table id="mapping_table">
+                    <thead>
+                        <tr>
+                            <th>Field</th>
+                            <th>Page Element</th>
+                            <th></th>
+                            <th>Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr data-field="full_name">
+                            <td class="field_label">Full Name</td>
+                            <td><select class="mapping_dd"></select></td>
+                            <td><a class="pick_btn" title="Click to select on page">Pick</a></td>
+                            <td class="field_preview"></td>
+                        </tr>
+                        <tr data-field="first_name">
+                            <td class="field_label">First Name</td>
+                            <td><select class="mapping_dd"></select></td>
+                            <td><a class="pick_btn" title="Click to select on page">Pick</a></td>
+                            <td class="field_preview"></td>
+                        </tr>
+                        <tr data-field="last_name">
+                            <td class="field_label">Last Name</td>
+                            <td><select class="mapping_dd"></select></td>
+                            <td><a class="pick_btn" title="Click to select on page">Pick</a></td>
+                            <td class="field_preview"></td>
+                        </tr>
+                        <tr data-field="phone">
+                            <td class="field_label">Phone *</td>
+                            <td><select class="mapping_dd"></select></td>
+                            <td><a class="pick_btn" title="Click to select on page">Pick</a></td>
+                            <td class="field_preview"></td>
+                        </tr>
+                        <tr data-field="email">
+                            <td class="field_label">Email</td>
+                            <td><select class="mapping_dd"></select></td>
+                            <td><a class="pick_btn" title="Click to select on page">Pick</a></td>
+                            <td class="field_preview"></td>
+                        </tr>
+                        <tr data-field="birthdate">
+                            <td class="field_label">DOB</td>
+                            <td><select class="mapping_dd"></select></td>
+                            <td><a class="pick_btn" title="Click to select on page">Pick</a></td>
+                            <td class="field_preview"></td>
+                        </tr>
+                        <tr data-field="address">
+                            <td class="field_label">Address</td>
+                            <td><select class="mapping_dd"></select></td>
+                            <td><a class="pick_btn" title="Click to select on page">Pick</a></td>
+                            <td class="field_preview"></td>
+                        </tr>
+                        <tr data-field="address2">
+                            <td class="field_label">Address 2</td>
+                            <td><select class="mapping_dd"></select></td>
+                            <td><a class="pick_btn" title="Click to select on page">Pick</a></td>
+                            <td class="field_preview"></td>
+                        </tr>
+                        <tr data-field="city">
+                            <td class="field_label">City</td>
+                            <td><select class="mapping_dd"></select></td>
+                            <td><a class="pick_btn" title="Click to select on page">Pick</a></td>
+                            <td class="field_preview"></td>
+                        </tr>
+                        <tr data-field="state">
+                            <td class="field_label">State</td>
+                            <td><select class="mapping_dd"></select></td>
+                            <td><a class="pick_btn" title="Click to select on page">Pick</a></td>
+                            <td class="field_preview"></td>
+                        </tr>
+                        <tr data-field="zipcode">
+                            <td class="field_label">Zip</td>
+                            <td><select class="mapping_dd"></select></td>
+                            <td><a class="pick_btn" title="Click to select on page">Pick</a></td>
+                            <td class="field_preview"></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div id="mapping_actions">
+                    <a id="grab_data_btn" class="api_box_button">Grab Data</a>
+                    <a id="save_mapping_btn" class="api_box_button">Save Mapping</a>
+                    <a id="clear_mapping_btn" class="api_box_button">Clear</a>
+                </div>
+                <div id="contact_preview" style="display:none;">
+                    <h4>Grabbed Contact</h4>
+                    <div id="contact_box_left">
+                        <p><b>Full name:</b> <span id="full_name"></span></p>
+                        <p><b>First name:</b> <span id="first_name"></span></p>
+                        <p><b>Last name:</b> <span id="last_name"></span></p>
+                        <p><b>Phone:</b> <span id="phone"></span></p>
+                        <p><b>Email:</b> <span id="email"></span></p>
+                        <p><b>Date of birth:</b> <span id="dob"></span></p>
+                    </div>
+                    <div id="contact_box_right">
+                        <p><b>Address1:</b> <span id="address1"></span></p>
+                        <p><b>Address2:</b> <span id="address2"></span></p>
+                        <p><b>City:</b> <span id="city"></span></p>
+                        <p><b>State:</b> <span id="state"></span></p>
+                        <p><b>Zipcode:</b> <span id="zipcode"></span></p>
+                    </div>
+                </div>
+            </div>
+            <div style="clear:both;"></div>
+            <br /><hr /><br />
+            <div id="survey_box">
+                <label>GHL Survey</label><br />
+                <input type="text" id="survey_url" placeholder="Paste your GHL survey URL" />
+                <div id="survey_actions">
+                    <a id="save_survey_url" class="api_box_button">Save URL</a>
+                    <a id="open_survey_btn" class="api_box_button">Open Survey</a>
+                </div>
+                <p id="survey_status"></p>
+            </div>
+            <br /><hr /><br />
+            <div id="tags_box">
+                <label>Tags</label><br />
+                <a id="send_to_leadmomentum" class="api_box_button select_button">Send To LeadMomentum</a>
+            </div>
+            <br /><hr /><br />
+            <div id="workflows_box">
+                <label>Workflows</label><br />
+                <a id="add_to_workflow" class="api_box_button select_button">Add to Workflow</a>
+            </div>
+            <br /><hr /><br />
+            <div id="api_key_box">
+                <div class="api_box_item">
+                    <input type="text" placeholder="LeadMomentum Api Name" id="api_name">
+                </div>
+                <div class="api_box_item">
+                    <input type="text" placeholder="LeadMomentum Api Key" id="api_key">
+                </div>
+                <div class="api_box_item">
+                    <a id="save_api_key" class="api_box_button">Add</a>
+                </div>
+                <br /><hr /><br />
+                <div id="api_key_items">
+                    <a id="select_api_key" class="api_box_button select_button">Select</a>
+                </div>
+            </div>
+            <br /><hr /><br />
+            <div id="phone_box">
+                <input type="text" id="landlinescrubber_api_key" placeholder="LandlineScrubber Api Key" />
+                <br /><br />
+                <input type="text" id="phone_for_check" placeholder="Phone" />
+                <a id="check_phone" class="api_box_button">Check</a>
+                <p><b>DNC: </b> <span id="dnc"></span></p>
+                <p><b>Line Type: </b> <span id="linetype"></span></p>
+            </div>
+
+        </div>
+        <script src="../browser-polyfill.min.js"></script>
+        <script src="../jquery.min.js"></script>
+        <script src="select2.min.js"></script>
+        <script src="script.js"></script>
+    </body>
+</html>

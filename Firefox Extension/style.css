@@ -1,0 +1,32 @@
+#top_banner_notification {
+    position:absolute;
+    top:30px;
+    left:30%;
+    width:40%;
+    z-index:999999999;
+    border:1px solid #000000;
+    padding:5px;
+    text-align: center;
+    background-color: #FFFFFF;
+}
+
+.lm-pick-highlight {
+    outline: 3px solid #f5d600 !important;
+    cursor: crosshair !important;
+}
+
+#lm-pick-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: 10px 0;
+    background-color: #f5d600;
+    color: #000;
+    text-align: center;
+    font-family: sans-serif;
+    font-size: 14px;
+    font-weight: bold;
+    z-index: 2147483647;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}

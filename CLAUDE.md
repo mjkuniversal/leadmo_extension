@@ -1,16 +1,16 @@
-# LeadMomentum Chrome Extension
+# LeadMomentum Browser Extension
 
 ## Project Overview
 
-Chrome Extension (Manifest V3, minimum Chrome 116) that scrapes contact data from **any website** and imports it into LeadMomentum/GoHighLevel. Auto-detects form fields with heuristic mapping, supports click-to-select for manual field assignment, and includes built-in presets for VanillaSoft and Intruity OneLink. Includes phone verification via LandlineScrubber API and GHL survey pre-fill integration.
+Browser extension (Chrome + Firefox, Manifest V3) that scrapes contact data from **any website** and imports it into LeadMomentum/GoHighLevel. Auto-detects form fields with heuristic mapping, supports click-to-select for manual field assignment, and includes built-in presets for VanillaSoft and Intruity OneLink. Includes phone verification via LandlineScrubber API and GHL survey pre-fill integration.
 
 ## Directory Structure
 
 ```
 leadmo/
 ├── Chrome Extension/
-│   ├── extension36 - need to update to this version/   # Latest source (v3.0)
-│   │   ├── manifest.json          # MV3 manifest
+│   ├── extension36 - need to update to this version/   # Latest Chrome source (v3.0)
+│   │   ├── manifest.json          # MV3 manifest (service_worker)
 │   │   ├── background.js          # Service worker - GHL API calls
 │   │   ├── content.js             # Content script - field detection, pick mode, DOM scraping
 │   │   ├── jquery.min.js          # jQuery 3.6.4
@@ -26,7 +26,23 @@ leadmo/
 │   ├── LeadMomentum v1.1/         # Previous version (archived)
 │   ├── LeadMomentum v1.0.zip      # Archived release
 │   ├── LeadMomentum v1.1.zip      # Archived release
-│   └── LeadMomentum v1.2.zip      # Current release for Chrome Web Store
+│   ├── LeadMomentum v1.2.zip      # Current release for Chrome Web Store
+│   └── LeadMomentum-Firefox v3.0.zip  # Firefox release zip
+├── Firefox Extension/                  # Firefox-adapted source (v3.0)
+│   ├── manifest.json          # MV3 manifest (background scripts, gecko settings)
+│   ├── background.js          # Background script (same as Chrome, polyfill handles compat)
+│   ├── content.js             # Content script (same as Chrome)
+│   ├── browser-polyfill.min.js # Mozilla webextension-polyfill v0.12.0
+│   ├── jquery.min.js          # jQuery 3.6.4
+│   ├── style.css              # Content script styles
+│   ├── icons/                 # Extension icons (36-512px)
+│   └── popup/
+│       ├── index.html         # Popup layout (+ polyfill script tag)
+│       ├── script.js          # Popup logic (injects polyfill before content.js)
+│       ├── style.css          # Popup styles
+│       ├── logo.png           # LeadMomentum logo
+│       ├── select2.min.js     # Select2 4.1.0-rc.0
+│       └── select2.min.css    # Select2 styles
 └── .gitignore
 ```
 
@@ -36,6 +52,7 @@ leadmo/
 |---------|---------|------|-------|
 | jQuery | 3.6.4 | `jquery.min.js` | Above CVE-2020-11022 threshold (3.5.0) |
 | Select2 | 4.1.0-rc.0 | `popup/select2.min.js` | Dropdown UI component |
+| webextension-polyfill | 0.12.0 | `browser-polyfill.min.js` | Firefox only — bridges `chrome.*` callbacks to `browser.*` Promises |
 
 ## Version History
 
@@ -57,7 +74,7 @@ Content Script (content.js)
   ↕ chrome.runtime.sendMessage (sender.id verified)
 Popup (popup/script.js)
   ↕ chrome.runtime.sendMessage (sender.id verified)
-Background Service Worker (background.js)
+Background (background.js)             # service_worker (Chrome) / scripts (Firefox)
   ↕ fetch()
 GoHighLevel REST API (rest.gohighlevel.com/v1/)
 ```
@@ -114,24 +131,37 @@ Works on **any website** with form fields. Auto-detects inputs/selects/textareas
 | GoHighLevel v1 | `rest.gohighlevel.com/v1/` | Contacts, workflows, tags |
 | LandlineScrubber | `api.landlinescrubber.com/api/` | Phone DNC + line type check |
 
-## Packaging for Chrome Web Store
+## Packaging
 
-1. Bump `version` in `manifest.json` (must exceed the currently published version)
-2. Create zip from the extension source directory:
-   ```bash
+### Chrome Web Store
+
+1. Bump `version` in `Chrome Extension/.../manifest.json`
+2. ```bash
    cd "Chrome Extension/extension36 - need to update to this version"
    zip -r "../LeadMomentum vX.Y.zip" . -x ".*"
    ```
-3. Upload the zip at the [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole)
+3. Upload at [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole)
+
+### Firefox Add-ons (AMO)
+
+1. Bump `version` in `Firefox Extension/manifest.json`
+2. ```bash
+   cd "Firefox Extension"
+   zip -r "../Chrome Extension/LeadMomentum-Firefox vX.Y.zip" . -x ".*"
+   ```
+3. Upload at [Firefox Add-on Developer Hub](https://addons.mozilla.org/developers/)
 
 ## Development
 
-### Loading Unpacked
+### Loading Unpacked (Chrome)
 
-1. Open `chrome://extensions/`
-2. Enable **Developer mode**
-3. Click **Load unpacked**
-4. Select `Chrome Extension/extension36 - need to update to this version/`
+1. Open `chrome://extensions/` → enable **Developer mode** → **Load unpacked**
+2. Select `Chrome Extension/extension36 - need to update to this version/`
+
+### Loading Temporary Add-on (Firefox)
+
+1. Open `about:debugging` → **This Firefox** → **Load Temporary Add-on**
+2. Select `Firefox Extension/manifest.json`
 
 ### Configuration
 
