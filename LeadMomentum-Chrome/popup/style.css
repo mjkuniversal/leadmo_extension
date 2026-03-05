@@ -1,0 +1,534 @@
+/* ══════════════════════════════════════════════════════════
+   LeadMomentum Popup — Modern Theme
+   Brand palette extracted from logo:
+     Primary (blue):  #1a6baa
+     Accent (gold):   #d4a812
+     Dark:            #1c2536
+     Text:            #2d3748
+     Muted:           #718096
+     Surface:         #f7f8fa
+     Border:          #e2e8f0
+   ══════════════════════════════════════════════════════════ */
+
+/* ── Base ──────────────────────────────────────────────── */
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    width: 460px;
+    padding: 0;
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    color: #2d3748;
+    background-color: #f0f2f5;
+    line-height: 1.45;
+}
+
+#wrapper {
+    padding: 16px;
+}
+
+label {
+    font-weight: 600;
+    font-size: 13px;
+    color: #1c2536;
+    letter-spacing: 0.01em;
+}
+
+h3 {
+    font-size: 15px;
+    font-weight: 700;
+    color: #1c2536;
+    margin: 0 0 4px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+h4 {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1c2536;
+    margin: 0 0 8px 0;
+}
+
+p {
+    margin: 4px 0;
+    font-size: 12px;
+}
+
+hr {
+    border: none;
+    height: 1px;
+    background: linear-gradient(to right, transparent, #d4a812, transparent);
+    margin: 0;
+}
+
+/* Hide the bare br+hr+br section dividers — sections use card spacing instead */
+br + hr,
+hr + br {
+    display: none;
+}
+
+/* ── Logo ──────────────────────────────────────────────── */
+
+#logo_box {
+    text-align: center;
+    padding: 4px 0 12px 0;
+    border-bottom: 2px solid #1a6baa;
+    margin-bottom: 16px;
+}
+
+#logo {
+    width: 180px;
+    margin: 0;
+}
+
+/* ── Section cards ─────────────────────────────────────── */
+
+#contact_box,
+#survey_box,
+#tags_box,
+#workflows_box,
+#api_key_box,
+#phone_box {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 14px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+/* Remove old clearfix div */
+div[style="clear:both;"] {
+    display: none;
+}
+
+/* ── Notification ──────────────────────────────────────── */
+
+#notification_message {
+    color: #1a6baa;
+    font-weight: 500;
+    font-size: 12px;
+    padding: 6px 10px;
+    background: #ebf4fb;
+    border-left: 3px solid #1a6baa;
+    border-radius: 0 4px 4px 0;
+    margin: 8px 0;
+}
+
+/* ── Buttons ───────────────────────────────────────────── */
+
+.api_box_button {
+    display: inline-block;
+    border-radius: 6px;
+    padding: 7px 16px;
+    cursor: pointer;
+    background: linear-gradient(135deg, #d4a812, #c49a0e);
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    border: none;
+    transition: all 0.15s ease;
+    box-shadow: 0 1px 2px rgba(212, 168, 18, 0.3);
+    text-align: center;
+}
+
+.api_box_button:hover {
+    background: linear-gradient(135deg, #c49a0e, #b08a0a);
+    box-shadow: 0 2px 6px rgba(212, 168, 18, 0.4);
+    transform: translateY(-1px);
+}
+
+.api_box_button:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(212, 168, 18, 0.3);
+}
+
+.api_box_button:focus-visible {
+    outline: 2px solid #1a6baa;
+    outline-offset: 2px;
+}
+
+/* Secondary button variant — for Clear, Select, and other non-primary actions */
+#clear_mapping_btn,
+#select_api_key {
+    background: #f7f8fa;
+    color: #2d3748;
+    border: 1px solid #e2e8f0;
+    box-shadow: none;
+}
+
+#clear_mapping_btn:hover,
+#select_api_key:hover {
+    background: #e2e8f0;
+    box-shadow: none;
+    transform: translateY(-1px);
+}
+
+.select_button {
+    display: inline-block;
+    margin-top: 10px;
+    text-align: center;
+}
+
+/* ── Form inputs ───────────────────────────────────────── */
+
+.api_box_item {
+    display: block;
+    padding: 2px 0;
+}
+
+#api_key_box input[type=text],
+#phone_box input[type=text],
+#survey_box input[type=text] {
+    width: 100%;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: #2d3748;
+    background: #f7f8fa;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    outline: none;
+}
+
+#api_key_box input[type=text]:focus,
+#phone_box input[type=text]:focus,
+#survey_box input[type=text]:focus {
+    border-color: #1a6baa;
+    box-shadow: 0 0 0 3px rgba(26, 107, 170, 0.12);
+    background: #ffffff;
+}
+
+::placeholder {
+    color: #a0aec0;
+    font-size: 12px;
+}
+
+/* ── Dropdowns (API keys, workflows, tags) ─────────────── */
+
+#api_keys_dd, #workflows_dd, #tags_dd {
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+    box-shadow: none;
+    padding: 7px 10px;
+    margin: 6px 0;
+    cursor: pointer;
+    background-color: #f7f8fa;
+    font-size: 12px;
+    color: #2d3748;
+    width: 100%;
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23718096' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 30px;
+    transition: border-color 0.15s ease;
+}
+
+#api_keys_dd:focus, #workflows_dd:focus, #tags_dd:focus {
+    border-color: #1a6baa;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(26, 107, 170, 0.12);
+}
+
+#workflows_box, #tags_box {
+    margin-bottom: 0;
+}
+
+/* ── Contact box: left / right columns ─────────────────── */
+
+#contact_box_left, #contact_box_right {
+    float: left;
+    width: 48%;
+}
+
+#contact_box_left {
+    margin-right: 4%;
+}
+
+#contact_box {
+    display: block;
+}
+
+/* ── Mapping table ─────────────────────────────────────── */
+
+#mapping_table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 8px 0;
+    font-size: 12px;
+}
+
+#mapping_table thead {
+    background: #f0f2f5;
+}
+
+#mapping_table th {
+    text-align: left;
+    font-size: 10px;
+    font-weight: 600;
+    color: #718096;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 6px 6px;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+#mapping_table td {
+    padding: 5px 6px;
+    vertical-align: middle;
+    border-bottom: 1px solid #f0f2f5;
+}
+
+#mapping_table tbody tr:hover {
+    background-color: #fafbfc;
+}
+
+#mapping_table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.field_label {
+    font-weight: 600;
+    white-space: nowrap;
+    width: 72px;
+    font-size: 12px;
+    color: #2d3748;
+}
+
+.mapping_dd {
+    width: 170px;
+    font-size: 11px;
+    padding: 4px 6px;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    background: #f7f8fa;
+    color: #2d3748;
+    transition: border-color 0.15s ease;
+    outline: none;
+}
+
+.mapping_dd:focus {
+    border-color: #1a6baa;
+    box-shadow: 0 0 0 2px rgba(26, 107, 170, 0.1);
+}
+
+.field_preview {
+    font-size: 11px;
+    color: #718096;
+    max-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-style: italic;
+}
+
+/* ── Pick button ───────────────────────────────────────── */
+
+.pick_btn {
+    display: inline-block;
+    padding: 3px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    background-color: #ebf4fb;
+    border: 1px solid #b8d4ea;
+    border-radius: 4px;
+    color: #1a6baa;
+    white-space: nowrap;
+    text-decoration: none;
+    transition: all 0.15s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.pick_btn:hover {
+    background-color: #1a6baa;
+    color: #ffffff;
+    border-color: #1a6baa;
+}
+
+.pick_btn:focus-visible {
+    outline: 2px solid #1a6baa;
+    outline-offset: 2px;
+}
+
+/* ── Mapping actions ───────────────────────────────────── */
+
+#mapping_actions {
+    margin: 12px 0 4px 0;
+    display: flex;
+    gap: 8px;
+}
+
+#mapping_actions .api_box_button {
+    font-size: 12px;
+    padding: 6px 14px;
+}
+
+/* ── Rescan button ─────────────────────────────────────── */
+
+.rescan_button {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 10px;
+    cursor: pointer;
+    background-color: #ebf4fb;
+    border: 1px solid #b8d4ea;
+    border-radius: 4px;
+    color: #1a6baa;
+    text-decoration: none;
+    transition: all 0.15s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.rescan_button:hover {
+    background-color: #1a6baa;
+    color: #ffffff;
+    border-color: #1a6baa;
+}
+
+.rescan_button:focus-visible {
+    outline: 2px solid #1a6baa;
+    outline-offset: 2px;
+}
+
+/* ── Mapping status ────────────────────────────────────── */
+
+#mapping_status {
+    font-size: 11px;
+    color: #718096;
+    margin: 2px 0 4px 0;
+}
+
+/* ── Contact preview ───────────────────────────────────── */
+
+#contact_preview {
+    margin-top: 12px;
+    padding: 10px;
+    background: #f7f8fa;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+}
+
+#contact_preview h4 {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    color: #1a6baa;
+}
+
+#contact_preview p {
+    font-size: 11px;
+    margin: 3px 0;
+    color: #4a5568;
+}
+
+#contact_preview b {
+    color: #2d3748;
+    font-weight: 600;
+}
+
+/* ── Survey section ────────────────────────────────────── */
+
+#survey_actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+#survey_actions .api_box_button {
+    font-size: 12px;
+    padding: 6px 14px;
+}
+
+#survey_status {
+    font-size: 11px;
+    color: #718096;
+    margin: 4px 0 0 0;
+}
+
+/* ── Phone box ─────────────────────────────────────────── */
+
+#phone_box {
+    font-size: 12px;
+}
+
+#phone_box p {
+    margin: 6px 0;
+}
+
+#phone_box b {
+    color: #2d3748;
+}
+
+#phone_box #dnc,
+#phone_box #linetype {
+    font-weight: 500;
+}
+
+/* ── API key items section ─────────────────────────────── */
+
+#api_key_items {
+    padding-top: 10px;
+    border-top: 1px solid #e2e8f0;
+    margin-top: 10px;
+}
+
+/* ── Select2 overrides ─────────────────────────────────── */
+
+.select2-container--default .select2-selection--single {
+    border-radius: 6px;
+    border-color: #e2e8f0;
+    height: 32px;
+    background: #f7f8fa;
+}
+
+.select2-container--default .select2-selection--single .select2-selection__rendered {
+    line-height: 32px;
+    font-size: 12px;
+    color: #2d3748;
+}
+
+.select2-container--default .select2-selection--single .select2-selection__arrow {
+    height: 32px;
+}
+
+.select2-dropdown {
+    border-color: #e2e8f0;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.select2-results__option--highlighted {
+    background-color: #1a6baa !important;
+}
+
+/* ── Scrollbar styling ─────────────────────────────────── */
+
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f0f2f5;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #c4cdd5;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #a0aec0;
+}

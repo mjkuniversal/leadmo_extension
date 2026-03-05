@@ -1,7 +1,7 @@
 /* ============================================================
-   LeadMomentum Popup v2.0
+   LeadMomentum Popup v3.1
    - Field detection + mapping dropdowns
-   - Click-to-select relay (survives popup close)
+   - Click-to-select via detached window (stays open during pick)
    - Per-domain mapping persistence
    - Existing API key / workflow / tag / phone check preserved
    ============================================================ */
@@ -18,6 +18,10 @@ const SURVEY_PARAM_MAP = {
     state: "state",
     zipcode: "postal_code"
 };
+
+// Detect if running as a detached pick window (opened via chrome.windows.create)
+let urlParams = new URLSearchParams(window.location.search);
+let isDetachedWindow = urlParams.has("tabId");
 
 // Tracks the current tab's domain and detected fields
 let currentDomain = "";
@@ -55,34 +59,61 @@ $(document).ready(function () {
     load_survey_url();
 
     // Get active tab, then trigger field detection
-    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-        if (!tabs || !tabs[0]) {
-            show_mapping_status("No active tab found.");
+    if (isDetachedWindow) {
+        // Opened as detached window — tab ID passed via URL params
+        currentTabId = parseInt(urlParams.get("tabId"), 10);
+        if (isNaN(currentTabId)) {
+            show_mapping_status("Invalid tab ID.");
             return;
         }
-
-        let tab = tabs[0];
-        currentTabId = tab.id;
-
-        // Can't inject into chrome:// or extension pages
-        if (!tab.url || tab.url.startsWith("chrome://") || tab.url.startsWith("chrome-extension://")) {
-            show_mapping_status("Cannot scan this page.");
-            return;
-        }
-
-        try {
-            currentDomain = new URL(tab.url).hostname;
-        } catch (e) {
-            currentDomain = "";
-        }
-
-        // Inject content script + CSS on demand, then scan
+        currentDomain = urlParams.get("domain") || "";
         inject_content_script(currentTabId, function () {
             check_pick_result(function () {
                 scan_page();
             });
         });
-    });
+    } else {
+        chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+            if (!tabs || !tabs[0]) {
+                show_mapping_status("No active tab found.");
+                return;
+            }
+
+            let tab = tabs[0];
+            currentTabId = tab.id;
+
+            // Can't inject into chrome:// or extension pages
+            if (!tab.url || tab.url.startsWith("chrome://") || tab.url.startsWith("chrome-extension://")) {
+                show_mapping_status("Cannot scan this page.");
+                return;
+            }
+
+            try {
+                currentDomain = new URL(tab.url).hostname;
+            } catch (e) {
+                currentDomain = "";
+            }
+
+            // Inject content script + CSS on demand, then scan
+            inject_content_script(currentTabId, function () {
+                check_pick_result(function () {
+                    scan_page();
+                });
+            });
+        });
+    }
+
+    // Clean up orphaned pick state when detached window closes without picking
+    if (isDetachedWindow) {
+        window.addEventListener("beforeunload", function () {
+            chrome.storage.local.get(["lm_pick_state"], function (data) {
+                if (data.lm_pick_state && data.lm_pick_state.active) {
+                    chrome.storage.local.remove("lm_pick_state");
+                    chrome.tabs.sendMessage(currentTabId, { subject: "cancelPicking" });
+                }
+            });
+        });
+    }
 
     // ── Rescan button ───────────────────────────────────────
     $("#rescan_btn").click(function () {
@@ -120,12 +151,13 @@ $(document).ready(function () {
         return false;
     });
 
-    // ── Pick buttons ────────────────────────────────────────
+    // ── Pick buttons (disabled in detached window to prevent nested windows) ──
     $("#mapping_table").on("click", ".pick_btn", function () {
+        if (isDetachedWindow) return false;
+
         let row = $(this).closest("tr");
         let fieldKey = row.data("field");
 
-        // Save pick state so we can recover after popup closes
         chrome.storage.local.set({
             lm_pick_state: { active: true, fieldKey: fieldKey, domain: currentDomain, result: null }
         }, function () {
@@ -133,7 +165,19 @@ $(document).ready(function () {
                 subject: "startPicking",
                 fieldKey: fieldKey
             });
-            // Popup will close when user clicks the page
+
+            if (!isDetachedWindow) {
+                // Open a detached window so the UI stays visible during pick
+                let detachedUrl = chrome.runtime.getURL("popup/index.html")
+                    + "?tabId=" + currentTabId
+                    + "&domain=" + encodeURIComponent(currentDomain);
+                chrome.windows.create({
+                    url: detachedUrl,
+                    type: "popup",
+                    width: 500,
+                    height: 700
+                });
+            }
         });
         return false;
     });
@@ -430,52 +474,58 @@ function show_mapping_status(text) {
     $("#mapping_status").text(text);
 }
 
-// ── Check for pending pick result ───────────────────────────
+// ── Apply a pick result to the UI ────────────────────────────
+function apply_pick_result(fieldKey, result) {
+    let row = $('#mapping_table tr[data-field="' + fieldKey + '"]');
+    if (row.length) {
+        let dd = row.find(".mapping_dd");
+        if (dd.find('option[value="' + CSS.escape(result.selector) + '"]').length === 0) {
+            let display = result.displayName || result.selector;
+            let valHint = result.currentValue ? " [" + result.currentValue.substring(0, 20) + "]" : "";
+            let safeDisplay = $("<span>").text(display + valHint).html();
+            let safeSelector = $("<span>").text(result.selector).html();
+            dd.append('<option value="' + safeSelector + '">' + safeDisplay + '</option>');
+            detectedFields.push({
+                selector: result.selector,
+                label: result.displayName,
+                name: "", id: "", placeholder: "",
+                tagName: "", type: "",
+                currentValue: result.currentValue || ""
+            });
+        }
+        dd.val(result.selector);
+        row.find(".field_preview").text(result.currentValue || "");
+        show_mapping_status("Picked element applied to " + fieldKey.replace(/_/g, " ") + ".");
+    }
+}
+
+// ── Listen for live pick completion (detached window) ────────
+chrome.storage.onChanged.addListener(function (changes) {
+    if (changes.lm_pick_state && changes.lm_pick_state.newValue) {
+        let state = changes.lm_pick_state.newValue;
+        if (!state.active && state.result && state.fieldKey) {
+            apply_pick_result(state.fieldKey, state.result);
+            chrome.storage.local.remove("lm_pick_state");
+        }
+    }
+});
+
+// ── Check for pending pick result (from previous session) ────
 function check_pick_result(callback) {
     chrome.storage.local.get(["lm_pick_state"], function (data) {
         let state = data.lm_pick_state;
         if (state && !state.active && state.result && state.fieldKey) {
-            // We have a pick result from a previous popup session
-            // Store it so we can apply after scan
             let fieldKey = state.fieldKey;
             let result = state.result;
 
-            // Clear the pick state
             chrome.storage.local.remove("lm_pick_state", function () {
-                // After scan completes, apply the pick result
                 let originalCallback = callback;
                 callback = function () {};
                 originalCallback();
 
                 // Wait a tick for scan_page to finish populating
                 setTimeout(function () {
-                    // Add the picked element to the dropdown if not already there
-                    let row = $('#mapping_table tr[data-field="' + fieldKey + '"]');
-                    if (row.length) {
-                        let dd = row.find(".mapping_dd");
-                        // Check if this selector is already an option
-                        if (dd.find('option[value="' + CSS.escape(result.selector) + '"]').length === 0) {
-                            let display = result.displayName || result.selector;
-                            let valHint = result.currentValue ? " [" + result.currentValue.substring(0, 20) + "]" : "";
-                            let safeDisplay = $("<span>").text(display + valHint).html();
-                            let safeSelector = $("<span>").text(result.selector).html();
-                            dd.append('<option value="' + safeSelector + '">' + safeDisplay + '</option>');
-                            // Also add to detectedFields
-                            detectedFields.push({
-                                selector: result.selector,
-                                label: result.displayName,
-                                name: "",
-                                id: "",
-                                placeholder: "",
-                                tagName: "",
-                                type: "",
-                                currentValue: result.currentValue || ""
-                            });
-                        }
-                        dd.val(result.selector);
-                        row.find(".field_preview").text(result.currentValue || "");
-                        show_mapping_status("Picked element applied to " + fieldKey.replace(/_/g, " ") + ".");
-                    }
+                    apply_pick_result(fieldKey, result);
                 }, 500);
             });
             return;
