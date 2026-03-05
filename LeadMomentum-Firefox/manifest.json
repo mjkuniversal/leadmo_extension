@@ -2,7 +2,7 @@
 
     "manifest_version": 3,
     "name": "LeadMomentum",
-    "version": "3.1",
+    "version": "3.2",
 
     "description": "Import contacts from any website into LeadMomentum (GoHighLevel). Includes phone verification.",
 
@@ -18,7 +18,7 @@
 
     "browser_specific_settings": {
         "gecko": {
-            "id": "leadmomentum@leadmomentum.com",
+            "id": "{b74bc660-2e4f-4e8f-9c5d-3a1f7d8e6b42}",
             "strict_min_version": "109.0",
             "data_collection_permissions": {
                 "required": ["personallyIdentifyingInfo", "websiteContent"]
