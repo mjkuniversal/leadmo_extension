@@ -27,6 +27,7 @@ let isDetachedWindow = urlParams.has("tabId");
 let currentDomain = "";
 let currentTabId = null;
 let detectedFields = [];
+let currentSurveyUrl = "";
 
 // ── Message listener (from background + content) ────────────
 chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
@@ -345,6 +346,10 @@ $(document).ready(function () {
             let surveyUrl;
             try {
                 surveyUrl = new URL(baseUrl);
+                if (surveyUrl.protocol !== "https:") {
+                    $("#survey_status").text("Survey URL must use https://");
+                    return;
+                }
             } catch (e) {
                 $("#survey_status").text("Saved survey URL is invalid.");
                 return;
@@ -356,8 +361,28 @@ $(document).ready(function () {
                 }
             }
 
-            chrome.tabs.create({ url: surveyUrl.href });
+            currentSurveyUrl = surveyUrl.href;
+            $("#survey_frame").attr("src", currentSurveyUrl);
+            $("#wrapper").hide();
+            $("#survey_frame_container").show();
         });
+        return false;
+    });
+
+    // ── Survey iframe: Back button ───────────────────────────
+    $("#survey_back_btn").click(function () {
+        $("#survey_frame").attr("src", "about:blank");
+        currentSurveyUrl = "";
+        $("#survey_frame_container").hide();
+        $("#wrapper").show();
+        return false;
+    });
+
+    // ── Survey iframe: Open in Tab fallback ──────────────────
+    $("#survey_open_tab_btn").click(function () {
+        if (currentSurveyUrl) {
+            chrome.tabs.create({ url: currentSurveyUrl });
+        }
         return false;
     });
 });
@@ -576,10 +601,24 @@ function fetch_workflows_and_tags() {
         subject1: 'makeApiCall',
         subject2: 'getWorkflowsAndTags'
     }, function (response) {
-        if (response && response.workflows) {
+        if (chrome.runtime.lastError || !response) {
+            $("#notification_message").remove();
+            $("#tags_box").prepend('<p id="notification_message">Failed to load tags/workflows. Check your API key.</p>');
+            setTimeout(function () { $("#notification_message").remove(); }, 4000);
+            return;
+        }
+        if (response.error) {
+            $("#notification_message").remove();
+            $('<p id="notification_message"></p>')
+                .text('API error (' + response.error + '). Verify your API key is valid.')
+                .prependTo('#tags_box');
+            setTimeout(function () { $("#notification_message").remove(); }, 4000);
+            return;
+        }
+        if (response.workflows) {
             load_workflows(response.workflows);
         }
-        if (response && response.tags) {
+        if (response.tags) {
             load_tags(response.tags);
         }
     });
@@ -588,7 +627,9 @@ function fetch_workflows_and_tags() {
 // ── Existing functions (unchanged) ──────────────────────────
 
 function load_api_keys() {
-    $("#api_keys_dd").remove();
+    let existingApiDD = $("#api_keys_dd");
+    if (existingApiDD.length && existingApiDD.data('select2')) existingApiDD.select2('destroy');
+    existingApiDD.remove();
     $('<select id="api_keys_dd"></select>').insertBefore($("#select_api_key"));
     chrome.storage.local.get(['api_keys', 'selected_api_key', 'landlinescrubber_api_key'], function (data) {
         let api_keys = [];
@@ -618,7 +659,9 @@ function load_api_keys() {
 }
 
 function load_workflows(workflows) {
-    $("#workflows_dd").remove();
+    let existingWfDD = $("#workflows_dd");
+    if (existingWfDD.length && existingWfDD.data('select2')) existingWfDD.select2('destroy');
+    existingWfDD.remove();
     $('<select id="workflows_dd"></select>').insertBefore($("#add_to_workflow"));
     if (workflows.length) {
         for (let i = 0; i < workflows.length; i++) {
@@ -630,7 +673,9 @@ function load_workflows(workflows) {
 }
 
 function load_tags(tags) {
-    $("#tags_dd").remove();
+    let existingTagDD = $("#tags_dd");
+    if (existingTagDD.length && existingTagDD.data('select2')) existingTagDD.select2('destroy');
+    existingTagDD.remove();
     $('<select id="tags_dd"><option value=""></option></select>').insertBefore($("#send_to_leadmomentum"));
     if (tags.length) {
         for (let i = 0; i < tags.length; i++) {

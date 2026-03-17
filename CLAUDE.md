@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Browser extension (Chrome + Firefox, Manifest V3) that scrapes contact data from **any website** and imports it into LeadMomentum/GoHighLevel. Auto-detects form fields with heuristic mapping, supports click-to-select for manual field assignment, and includes built-in presets for VanillaSoft and Intruity OneLink. Includes phone verification via LandlineScrubber API and GHL survey pre-fill integration.
+Browser extension (Chrome + Firefox, Manifest V3) that scrapes contact data from **any website** and imports it into LeadMomentum/GoHighLevel. Auto-detects form fields with heuristic mapping, supports click-to-select for manual field assignment, and includes built-in presets for VanillaSoft and Intruity OneLink. Includes phone verification via LandlineScrubber API and embedded GHL survey submission (iframe pre-filled with scraped contact data).
 
 ## Directory Structure
 
@@ -162,7 +162,7 @@ Works on **any website** with form fields. Auto-detects inputs/selects/textareas
 
 1. Open extension popup
 2. Enter API name + GoHighLevel API key → click **Add** → **Select**
-3. (Optional) Paste GHL survey URL → click **Save URL** (enables Open Survey button)
+3. (Optional) Paste GHL survey URL → click **Save URL** → **Open Survey** loads the survey in an embedded iframe pre-filled with scraped data (Back button returns to main UI; Open in Tab fallback available)
 4. (Optional) Enter LandlineScrubber API key for phone verification
 
 ### Permissions

@@ -16,19 +16,29 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
                         fetch("https://rest.gohighlevel.com/v1/workflows/", {
                             headers: headers,
                             method: 'GET'
-                        }).then(response => response.json()).catch(() => ({})),
+                        }).then(async response => {
+                            if (!response.ok) return { _error: response.status };
+                            try { return await response.json(); }
+                            catch (e) { return { _error: 'invalid-json' }; }
+                        }).catch(() => ({ _error: 'network' })),
                         fetch("https://rest.gohighlevel.com/v1/tags/", {
                             headers: headers,
                             method: 'GET'
-                        }).then(response => response.json()).catch(() => ({}))
+                        }).then(async response => {
+                            if (!response.ok) return { _error: response.status };
+                            try { return await response.json(); }
+                            catch (e) { return { _error: 'invalid-json' }; }
+                        }).catch(() => ({ _error: 'network' }))
                     ]).then(([workflowData, tagData]) => {
+                        let error = workflowData._error || tagData._error || null;
                         sendResponse({
                             workflows: workflowData['workflows'] || [],
-                            tags: tagData['tags'] || []
+                            tags: tagData['tags'] || [],
+                            error: error
                         });
                     }).catch(error => {
                         console.log(error);
-                        sendResponse({ workflows: [], tags: [] });
+                        sendResponse({ workflows: [], tags: [], error: 'unknown' });
                     });
                 }
 
