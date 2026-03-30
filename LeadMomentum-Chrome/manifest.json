@@ -35,7 +35,6 @@
 
     "action": {
         "default_title": "LeadMomentum",
-        "default_icon": "icons/icon-48.png",
-        "default_popup": "popup/index.html"
+        "default_icon": "icons/icon-48.png"
     }
 }

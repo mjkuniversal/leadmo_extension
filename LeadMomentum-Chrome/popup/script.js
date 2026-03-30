@@ -59,6 +59,12 @@ $(document).ready(function () {
     load_api_keys();
     load_survey_url();
 
+    // Close button
+    $("#close_btn").click(function () {
+        window.close();
+        return false;
+    });
+
     // Get active tab, then trigger field detection
     if (isDetachedWindow) {
         // Opened as detached window — tab ID passed via URL params
@@ -395,12 +401,12 @@ $(document).ready(function () {
 // ── Inject content script on demand ──────────────────────────
 function inject_content_script(tabId, callback) {
     chrome.scripting.insertCSS({
-        target: { tabId: tabId, allFrames: true },
+        target: { tabId: tabId },
         files: ["style.css"]
     }).catch(function (err) { console.warn("LeadMomentum: insertCSS failed:", err); });
 
     chrome.scripting.executeScript({
-        target: { tabId: tabId, allFrames: true },
+        target: { tabId: tabId },
         files: ["jquery.min.js", "content.js"]
     }).then(function () {
         callback();

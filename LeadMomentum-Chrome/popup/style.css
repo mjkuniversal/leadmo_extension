@@ -80,6 +80,23 @@ hr + br {
     padding: 4px 0 12px 0;
     border-bottom: 2px solid #1a6baa;
     margin-bottom: 16px;
+    position: relative;
+}
+
+#close_btn {
+    position: absolute;
+    top: 4px;
+    right: 8px;
+    font-size: 22px;
+    font-weight: bold;
+    color: #666;
+    cursor: pointer;
+    text-decoration: none;
+    line-height: 1;
+}
+
+#close_btn:hover {
+    color: #c00;
 }
 
 #logo {

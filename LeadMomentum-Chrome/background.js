@@ -1,5 +1,44 @@
 const GHL_BASE = "https://services.leadconnectorhq.com";
 
+// Open popup as a persistent window instead of browser popup
+let popupWindowId = null;
+
+chrome.action.onClicked.addListener(function (tab) {
+    // If window already exists, focus it
+    if (popupWindowId !== null) {
+        chrome.windows.get(popupWindowId, function (win) {
+            if (chrome.runtime.lastError || !win) {
+                popupWindowId = null;
+                openPopupWindow(tab);
+            } else {
+                chrome.windows.update(popupWindowId, { focused: true });
+            }
+        });
+    } else {
+        openPopupWindow(tab);
+    }
+});
+
+function openPopupWindow(tab) {
+    let url = chrome.runtime.getURL("popup/index.html")
+        + "?tabId=" + tab.id
+        + "&domain=" + encodeURIComponent(new URL(tab.url || "").hostname || "");
+    chrome.windows.create({
+        url: url,
+        type: "popup",
+        width: 520,
+        height: 750
+    }, function (win) {
+        popupWindowId = win.id;
+    });
+}
+
+chrome.windows.onRemoved.addListener(function (windowId) {
+    if (windowId === popupWindowId) {
+        popupWindowId = null;
+    }
+});
+
 chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     if (sender.id !== chrome.runtime.id) return;
     if ((msg.from === 'popup') && (msg.subject1 === 'makeApiCall')) {
