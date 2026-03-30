@@ -8,7 +8,7 @@ Browser extension (Chrome + Firefox, Manifest V3) that scrapes contact data from
 
 ```
 leadmo/
-├── LeadMomentum-Chrome/                # Chrome extension source (v4.4)
+├── LeadMomentum-Chrome/                # Chrome extension source (v5.0)
 │   ├── manifest.json                   # MV3 manifest (service_worker)
 │   ├── background.js                   # Service worker - GHL API calls
 │   ├── content.js                      # Content script - field detection, pick mode, DOM scraping
@@ -22,7 +22,7 @@ leadmo/
 │       ├── logo.png                    # LeadMomentum logo
 │       ├── select2.min.js              # Select2 4.1.0-rc.0
 │       └── select2.min.css             # Select2 styles
-├── LeadMomentum-Firefox/               # Firefox extension source (v4.4)
+├── LeadMomentum-Firefox/               # Firefox extension source (v5.0)
 │   ├── manifest.json                   # MV3 manifest (background scripts, gecko settings)
 │   ├── background.js                   # Background script (same as Chrome, polyfill handles compat)
 │   ├── content.js                      # Content script (same as Chrome)
@@ -59,7 +59,7 @@ leadmo/
 | 2.1 | Switched from declarative `content_scripts` to on-demand injection via `activeTab` + `chrome.scripting` API. Eliminates broad host permission CWS warning. Content script and CSS injected only when user opens popup. |
 | 3.0 | Added GHL survey integration: save a survey URL, open it in a new tab with scraped contact data pre-filled as query parameters. |
 | 3.1 | Pick mode now opens a detached window so the UI stays visible while selecting page elements. |
-| 4.4 | Migrated from GHL v1 API (`rest.gohighlevel.com`) to v2 API (`services.leadconnectorhq.com`). Requires Location ID + Private Integration Token instead of v1 location API key. |
+| 5.0 | Migrated from GHL v1 API (`rest.gohighlevel.com`) to v2 API (`services.leadconnectorhq.com`). Requires Location ID + Private Integration Token instead of v1 location API key. |
 
 ## Architecture
 
