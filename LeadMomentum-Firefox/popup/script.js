@@ -1,5 +1,5 @@
 /* ============================================================
-   LeadMomentum Popup v3.1 (Firefox)
+   LeadMomentum Popup v4.4 (Firefox)
    - Field detection + mapping dropdowns
    - Click-to-select via detached window (stays open during pick)
    - Per-domain mapping persistence
@@ -202,27 +202,30 @@ $(document).ready(function () {
     $("#save_api_key").click(function () {
         let api_key = $('#api_key').val().trim();
         let api_name = $('#api_name').val().trim();
-        if (api_key && api_name) {
-            chrome.storage.local.get(['api_keys', 'selected_api_key'], function (data) {
+        let location_id = $('#location_id').val().trim();
+        if (api_key && api_name && location_id) {
+            chrome.storage.local.get(['api_keys', 'selected_api_key', 'selected_location_id'], function (data) {
                 let api_keys = [];
                 let selected_api_key = '';
+                let selected_location_id = '';
                 if (data['api_keys'] && (data['api_keys'] != 'undefined'))
                     api_keys = data['api_keys'];
                 if (data['selected_api_key'] && (data['selected_api_key'] != 'undefined'))
                     selected_api_key = data['selected_api_key'];
+                if (data['selected_location_id'] && (data['selected_location_id'] != 'undefined'))
+                    selected_location_id = data['selected_location_id'];
 
-                let api_keys_item = [];
-                api_keys_item.push(api_name);
-                api_keys_item.push(api_key);
-                api_keys.push(api_keys_item);
+                api_keys.push([api_name, api_key, location_id]);
 
                 if (!selected_api_key) {
                     selected_api_key = api_key;
+                    selected_location_id = location_id;
                 }
 
                 chrome.storage.local.set({
                     api_keys: api_keys,
-                    selected_api_key: selected_api_key
+                    selected_api_key: selected_api_key,
+                    selected_location_id: selected_location_id
                 }, function () {
                     $("#api_key_box input").val("");
                     load_api_keys();
@@ -234,8 +237,10 @@ $(document).ready(function () {
 
     $("#select_api_key").click(function () {
         let selected_api_key = $("#api_keys_dd").val();
+        let selected_location_id = $("#api_keys_dd option:selected").data('location-id') || '';
         chrome.storage.local.set({
-            selected_api_key: selected_api_key
+            selected_api_key: selected_api_key,
+            selected_location_id: selected_location_id
         }, function () {
             fetch_workflows_and_tags();
             $("#api_key_items").prepend('<p id="notification_message">' + $("#api_keys_dd option:selected").text() + ' account selected</p>');
@@ -610,8 +615,11 @@ function fetch_workflows_and_tags() {
         }
         if (response.error) {
             $("#notification_message").remove();
+            let errorMsg = response.error === 'missing-location-id'
+                ? 'Location ID is missing. Re-add your account with a Location ID.'
+                : 'API error (' + response.error + '). Verify your API key and Location ID are valid.';
             $('<p id="notification_message"></p>')
-                .text('API error (' + response.error + '). Verify your API key is valid.')
+                .text(errorMsg)
                 .prependTo('#tags_box');
             setTimeout(function () { $("#notification_message").remove(); }, 4000);
             return;
@@ -632,21 +640,25 @@ function load_api_keys() {
     if (existingApiDD.length && existingApiDD.data('select2')) existingApiDD.select2('destroy');
     existingApiDD.remove();
     $('<select id="api_keys_dd"></select>').insertBefore($("#select_api_key"));
-    chrome.storage.local.get(['api_keys', 'selected_api_key', 'landlinescrubber_api_key'], function (data) {
+    chrome.storage.local.get(['api_keys', 'selected_api_key', 'selected_location_id', 'landlinescrubber_api_key'], function (data) {
         let api_keys = [];
         let selected_api_key = '';
+        let selected_location_id = '';
         let landlinescrubber_api_key = '';
         if (data['api_keys'] && (data['api_keys'] != 'undefined'))
             api_keys = data['api_keys'];
         if (data['selected_api_key'] && (data['selected_api_key'] != 'undefined'))
             selected_api_key = data['selected_api_key'];
+        if (data['selected_location_id'] && (data['selected_location_id'] != 'undefined'))
+            selected_location_id = data['selected_location_id'];
         if (data['landlinescrubber_api_key'] && (data['landlinescrubber_api_key'] != 'undefined'))
             landlinescrubber_api_key = data['landlinescrubber_api_key'];
 
         $("#landlinescrubber_api_key").val(landlinescrubber_api_key);
 
         for (let i = 0; i < api_keys.length; i++) {
-            let option = '<option value="' + api_keys[i][1] + '">' + api_keys[i][0] + '</option>';
+            let locationId = api_keys[i][2] || '';
+            let option = '<option value="' + api_keys[i][1] + '" data-location-id="' + locationId + '">' + api_keys[i][0] + '</option>';
             $("#api_keys_dd").append(option);
         }
 

@@ -1,19 +1,29 @@
+const GHL_BASE = "https://services.leadconnectorhq.com";
+
 chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     if (sender.id !== chrome.runtime.id) return;
     if ((msg.from === 'popup') && (msg.subject1 === 'makeApiCall')) {
-        chrome.storage.local.get(['selected_api_key'], function (data) {
+        chrome.storage.local.get(['selected_api_key', 'selected_location_id'], function (data) {
             let selected_api_key = 0;
+            let selected_location_id = '';
             if (data['selected_api_key'] && (data['selected_api_key'] != 'undefined'))
                 selected_api_key = data['selected_api_key'];
+            if (data['selected_location_id'] && (data['selected_location_id'] != 'undefined'))
+                selected_location_id = data['selected_location_id'];
 
             if (selected_api_key) {
                 if (msg.subject2 === 'getWorkflowsAndTags') {
+                    if (!selected_location_id) {
+                        sendResponse({ workflows: [], tags: [], error: 'missing-location-id' });
+                        return;
+                    }
                     let headers = {
                         'Authorization': 'Bearer ' + selected_api_key,
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Version': '2021-07-28'
                     };
                     Promise.all([
-                        fetch("https://rest.gohighlevel.com/v1/workflows/", {
+                        fetch(GHL_BASE + "/workflows/?locationId=" + encodeURIComponent(selected_location_id), {
                             headers: headers,
                             method: 'GET'
                         }).then(async response => {
@@ -21,7 +31,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
                             try { return await response.json(); }
                             catch (e) { return { _error: 'invalid-json' }; }
                         }).catch(() => ({ _error: 'network' })),
-                        fetch("https://rest.gohighlevel.com/v1/tags/", {
+                        fetch(GHL_BASE + "/locations/" + encodeURIComponent(selected_location_id) + "/tags", {
                             headers: headers,
                             method: 'GET'
                         }).then(async response => {
@@ -48,7 +58,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
                     if (msg.tag) {
                         tag = msg.tag;
                     }
-                    create_contact(tag, "", selected_api_key);
+                    create_contact(tag, "", selected_api_key, selected_location_id);
                 }
 
                 if (msg.subject2 === 'addWorkflow') {
@@ -58,7 +68,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
                         tag = msg.tag;
                     }
                     let workflow_id = msg.workflow_id;
-                    create_contact(tag, workflow_id, selected_api_key);
+                    create_contact(tag, workflow_id, selected_api_key, selected_location_id);
                 }
             } else {
                 sendResponse({});
@@ -68,7 +78,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     }
 });
 
-function create_contact(tag, workflow_id, selected_api_key) {
+function create_contact(tag, workflow_id, selected_api_key, selected_location_id) {
     let tags = [];
     if (tag) {
         tags.push(tag);
@@ -90,6 +100,7 @@ function create_contact(tag, workflow_id, selected_api_key) {
         }
 
         let create_contact_data = {
+            "locationId": selected_location_id,
             "firstName": firstName,
             "lastName": lastName,
             "name": profile_data["full_name"] || (firstName + " " + lastName).trim(),
@@ -105,25 +116,21 @@ function create_contact(tag, workflow_id, selected_api_key) {
             "website": "",
             "tags": tags,
             "source": "public api",
-            "customField": {
-                "__custom_field_id__": ""
-            }
+            "customFields": []
         };
 
-        //console.log(create_contact_data);
-
-        fetch("https://rest.gohighlevel.com/v1/contacts/", {
+        fetch(GHL_BASE + "/contacts/", {
             headers: {
                 'Authorization': 'Bearer ' + selected_api_key,
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Version': '2021-07-28'
             },
             method: 'POST',
             body: JSON.stringify(create_contact_data)
-        }).then(response => response.json()).then(data => {
-            //console.log(data);
-            if (data["contact"]["id"]) {
+        }).then(response => response.json()).then(responseData => {
+            if (responseData["contact"] && responseData["contact"]["id"]) {
                 if (workflow_id) {
-                    add_to_workflow(data["contact"]["id"], workflow_id, selected_api_key);
+                    add_to_workflow(responseData["contact"]["id"], workflow_id, selected_api_key);
                 }
 
                 chrome.runtime.sendMessage({
@@ -141,14 +148,15 @@ function create_contact(tag, workflow_id, selected_api_key) {
 function add_to_workflow(contact_id, workflow_id, selected_api_key) {
     let current_datetime = String(new Date().toISOString()).slice(0, 19) + "+00:00";
     let add_workflow_data = {"eventStartTime": current_datetime};
-    fetch("https://rest.gohighlevel.com/v1/contacts/" + contact_id + "/workflow/" + workflow_id, {
+    fetch(GHL_BASE + "/contacts/" + contact_id + "/workflow/" + workflow_id, {
         headers: {
             'Authorization': 'Bearer ' + selected_api_key,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Version': '2021-07-28'
         },
         method: 'POST',
         body: JSON.stringify(add_workflow_data)
-    }).then(response => response.text()).then(data => {
+    }).then(response => response.text()).then(() => {
         chrome.runtime.sendMessage({
             from: 'background',
             subject: 'workflowAdded'
@@ -157,4 +165,3 @@ function add_to_workflow(contact_id, workflow_id, selected_api_key) {
         console.log(error);
     });
 }
-

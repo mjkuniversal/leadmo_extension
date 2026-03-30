@@ -8,7 +8,7 @@ Browser extension (Chrome + Firefox, Manifest V3) that scrapes contact data from
 
 ```
 leadmo/
-├── LeadMomentum-Chrome/                # Chrome extension source (v3.1)
+├── LeadMomentum-Chrome/                # Chrome extension source (v4.4)
 │   ├── manifest.json                   # MV3 manifest (service_worker)
 │   ├── background.js                   # Service worker - GHL API calls
 │   ├── content.js                      # Content script - field detection, pick mode, DOM scraping
@@ -22,7 +22,7 @@ leadmo/
 │       ├── logo.png                    # LeadMomentum logo
 │       ├── select2.min.js              # Select2 4.1.0-rc.0
 │       └── select2.min.css             # Select2 styles
-├── LeadMomentum-Firefox/               # Firefox extension source (v3.1)
+├── LeadMomentum-Firefox/               # Firefox extension source (v4.4)
 │   ├── manifest.json                   # MV3 manifest (background scripts, gecko settings)
 │   ├── background.js                   # Background script (same as Chrome, polyfill handles compat)
 │   ├── content.js                      # Content script (same as Chrome)
@@ -59,6 +59,7 @@ leadmo/
 | 2.1 | Switched from declarative `content_scripts` to on-demand injection via `activeTab` + `chrome.scripting` API. Eliminates broad host permission CWS warning. Content script and CSS injected only when user opens popup. |
 | 3.0 | Added GHL survey integration: save a survey URL, open it in a new tab with scraped contact data pre-filled as query parameters. |
 | 3.1 | Pick mode now opens a detached window so the UI stays visible while selecting page elements. |
+| 4.4 | Migrated from GHL v1 API (`rest.gohighlevel.com`) to v2 API (`services.leadconnectorhq.com`). Requires Location ID + Private Integration Token instead of v1 location API key. |
 
 ## Architecture
 
@@ -98,8 +99,9 @@ All `onMessage` listeners verify `sender.id === chrome.runtime.id` to reject mes
 
 | Key | Type | Purpose |
 |-----|------|---------|
-| `api_keys` | `Array<[name, key]>` | Saved GHL API keys |
+| `api_keys` | `Array<[name, key, locationId]>` | Saved GHL API keys with location IDs |
 | `selected_api_key` | `string` | Currently active API key |
+| `selected_location_id` | `string` | Currently active GHL location ID |
 | `profile_data` | `object` | Scraped contact data (PII) |
 | `landlinescrubber_api_key` | `string` | Phone verification API key |
 | `lm_domain_mappings` | `{domain: {field: {selector}}}` | Saved per-domain field mappings |
@@ -123,7 +125,7 @@ Works on **any website** with form fields. Auto-detects inputs/selects/textareas
 
 | API | Base URL | Usage |
 |-----|----------|-------|
-| GoHighLevel v1 | `rest.gohighlevel.com/v1/` | Contacts, workflows, tags |
+| GoHighLevel v2 | `services.leadconnectorhq.com/` | Contacts, workflows, tags (requires `Version: 2021-07-28` header + `locationId`) |
 | LandlineScrubber | `api.landlinescrubber.com/api/` | Phone DNC + line type check |
 
 ## Packaging
@@ -161,7 +163,7 @@ Works on **any website** with form fields. Auto-detects inputs/selects/textareas
 ### Configuration
 
 1. Open extension popup
-2. Enter API name + GoHighLevel API key → click **Add** → **Select**
+2. Enter API name + GoHighLevel API key (Private Integration Token) + Location ID → click **Add** → **Select**
 3. (Optional) Paste GHL survey URL → click **Save URL** → **Open Survey** loads the survey in an embedded iframe pre-filled with scraped data (Back button returns to main UI; Open in Tab fallback available)
 4. (Optional) Enter LandlineScrubber API key for phone verification
 
@@ -172,5 +174,5 @@ Works on **any website** with form fields. Auto-detects inputs/selects/textareas
 | `storage` | Save API keys and scraped contact data |
 | `activeTab` | Access current tab when user clicks extension icon |
 | `scripting` | Inject content script and CSS on demand |
-| `host_permissions` for `rest.gohighlevel.com` | Cross-origin API calls from service worker |
+| `host_permissions` for `services.leadconnectorhq.com` | Cross-origin GHL v2 API calls from service worker |
 | `host_permissions` for `api.landlinescrubber.com` | Cross-origin phone verification from popup |
