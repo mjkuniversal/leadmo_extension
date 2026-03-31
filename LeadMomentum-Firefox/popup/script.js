@@ -1,5 +1,5 @@
 /* ============================================================
-   LeadMomentum Popup v5.0 (Firefox)
+   LeadMomentum Popup v5.1 (Firefox)
    - Field detection + mapping dropdowns
    - Click-to-select via detached window (stays open during pick)
    - Per-domain mapping persistence
@@ -42,6 +42,12 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
         setTimeout(function () {
             $("#notification_message").remove();
         }, 2500);
+
+        // Auto-refresh survey with fresh form for next submission
+        chrome.storage.local.get(['profile_data'], function (data) {
+            let profile = data.profile_data || {};
+            refresh_survey_iframe(profile);
+        });
     }
 
     if ((msg.from === 'background') && (msg.subject === 'workflowAdded')) {
@@ -727,6 +733,45 @@ function load_contact_data() {
         $("#dob").text(profile_data["birthdate"]);
 
         $("#phone_for_check").val(profile_data["phone"]);
+
+        // Auto-refresh survey with new contact data
+        refresh_survey_iframe(profile_data);
+    });
+}
+
+function refresh_survey_iframe(profile) {
+    chrome.storage.local.get(["survey_url"], function (data) {
+        let baseUrl = data.survey_url;
+        if (!baseUrl) return;
+
+        // Split full_name if needed
+        if (profile.full_name && !profile.first_name && !profile.last_name) {
+            let nameParts = profile.full_name.trim().split(/\s+/);
+            profile.first_name = nameParts.shift() || "";
+            profile.last_name = nameParts.join(" ") || "";
+        }
+
+        let surveyUrl;
+        try {
+            surveyUrl = new URL(baseUrl);
+            if (surveyUrl.protocol !== "https:") return;
+        } catch (e) { return; }
+
+        for (let key in SURVEY_PARAM_MAP) {
+            let value = profile[key];
+            if (value) {
+                surveyUrl.searchParams.set(SURVEY_PARAM_MAP[key], value);
+            }
+        }
+
+        currentSurveyUrl = surveyUrl.href;
+        $("#survey_frame").attr("src", currentSurveyUrl);
+
+        // Auto-show survey if not already visible
+        if ($("#survey_frame_container").is(":hidden")) {
+            $("#wrapper").hide();
+            $("#survey_frame_container").show();
+        }
     });
 }
 
