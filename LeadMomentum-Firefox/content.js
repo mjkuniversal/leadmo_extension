@@ -375,15 +375,19 @@ function grab_data(mappings) {
         state: "",
         zipcode: ""
     };
+    let matchedSelectors = 0;
+    let capturedValues = 0;
 
     for (let fieldKey in mappings) {
         let selector = mappings[fieldKey];
         if (!selector) continue;
         let el = document.querySelector(selector);
         if (!el) continue;
+        matchedSelectors++;
         let val = get_element_value(el);
         if (val && profile_data.hasOwnProperty(fieldKey)) {
             profile_data[fieldKey] = val;
+            capturedValues++;
         }
     }
 
@@ -406,6 +410,10 @@ function grab_data(mappings) {
 
     if (profile_data.phone) {
         profile_data.phone = format_phone(profile_data.phone);
+    }
+
+    if (!matchedSelectors && !capturedValues) {
+        return;
     }
 
     chrome.storage.local.set({

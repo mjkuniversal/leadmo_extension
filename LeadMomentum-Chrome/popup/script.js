@@ -7,13 +7,16 @@
    ============================================================ */
 
 // Maps profile_data keys → GHL survey query parameter names
+// Note: GHL compound address field and date fields don't reliably pre-fill via URL params.
+// Address sub-fields (street_address, city, state, postal_code) are included but may not work
+// depending on the survey builder's Query Key configuration.
 const SURVEY_PARAM_MAP = {
     first_name: "first_name",
     last_name: "last_name",
     phone: "phone",
     email: "email",
     birthdate: "date_of_birth",
-    address: "address1",
+    address: "street_address",
     city: "city",
     state: "state",
     zipcode: "postal_code"
@@ -164,10 +167,8 @@ $(document).ready(function () {
         return false;
     });
 
-    // ── Pick buttons (disabled in detached window to prevent nested windows) ──
+    // ── Pick buttons ────────────────────────────────────────
     $("#mapping_table").on("click", ".pick_btn", function () {
-        if (isDetachedWindow) return false;
-
         let row = $(this).closest("tr");
         let fieldKey = row.data("field");
 
@@ -423,13 +424,19 @@ function inject_content_script(tabId, callback) {
 }
 
 // ── Scan page for fields ────────────────────────────────────
-function scan_page() {
+function scan_page(retryCount) {
     if (!currentTabId) return;
+    retryCount = retryCount || 0;
 
     show_mapping_status("Scanning...");
     chrome.tabs.sendMessage(currentTabId, { subject: "detectFields" }, function (response) {
         if (chrome.runtime.lastError) {
-            show_mapping_status("Cannot scan this page (content script not loaded).");
+            // Content script may not have registered its listener yet — retry after a delay
+            if (retryCount < 3) {
+                setTimeout(function () { scan_page(retryCount + 1); }, 300);
+            } else {
+                show_mapping_status("Cannot scan this page (content script not loaded).");
+            }
             return;
         }
         if (!response || !response.fields) {
@@ -667,13 +674,30 @@ function load_api_keys() {
 
         $("#landlinescrubber_api_key").val(landlinescrubber_api_key);
 
+        // Clear any previous setup notices
+        $(".lm-setup-notice").remove();
+
         for (let i = 0; i < api_keys.length; i++) {
             let locationId = api_keys[i][2] || '';
             let option = '<option value="' + api_keys[i][1] + '" data-location-id="' + locationId + '">' + api_keys[i][0] + '</option>';
             $("#api_keys_dd").append(option);
         }
 
-        if (selected_api_key) {
+        if (!api_keys.length) {
+            // No accounts configured at all
+            $("#api_key_box").prepend(
+                '<p class="lm-setup-notice">Add your API Name, API Key (Private Integration Token), and Location ID below, then click Add and Select.</p>'
+            );
+            $("#tags_box").prepend('<p class="lm-setup-notice">Add an API key below to load tags.</p>');
+            $("#workflows_box").prepend('<p class="lm-setup-notice">Add an API key below to load workflows.</p>');
+        } else if (!selected_api_key) {
+            // Accounts exist but none selected
+            $("#api_key_box").prepend(
+                '<p class="lm-setup-notice">Select an account below to load workflows and tags.</p>'
+            );
+            $("#tags_box").prepend('<p class="lm-setup-notice">Select an account to load tags.</p>');
+            $("#workflows_box").prepend('<p class="lm-setup-notice">Select an account to load workflows.</p>');
+        } else {
             fetch_workflows_and_tags();
             $("#api_keys_dd").val(selected_api_key);
         }

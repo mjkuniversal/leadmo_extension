@@ -3,3 +3,7 @@
 *.tmp
 .DS_Store
 GEMINI.md
+node_modules/
+test-extension/
+test-results/
+playwright-report/

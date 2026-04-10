@@ -138,6 +138,17 @@ div[style="clear:both;"] {
     margin: 8px 0;
 }
 
+.lm-setup-notice {
+    color: #8b6914;
+    font-weight: 500;
+    font-size: 12px;
+    padding: 6px 10px;
+    background: #fef9e7;
+    border-left: 3px solid #d4a812;
+    border-radius: 0 4px 4px 0;
+    margin: 8px 0;
+}
+
 /* ── Buttons ───────────────────────────────────────────── */
 
 .api_box_button {
