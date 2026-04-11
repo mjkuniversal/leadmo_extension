@@ -1,0 +1,25 @@
+{
+  "name": "leadmo",
+  "version": "1.0.0",
+  "description": "Import contact information from your CRM directly into [LeadMomentum](https://leadmomentum.com) (GoHighLevel).",
+  "main": "index.js",
+  "scripts": {
+    "test": "npx playwright test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mjkuniversal/leadmo_extension.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/mjkuniversal/leadmo_extension/issues"
+  },
+  "homepage": "https://github.com/mjkuniversal/leadmo_extension#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@types/chrome": "^0.1.40",
+    "@types/node": "^25.5.2"
+  }
+}
