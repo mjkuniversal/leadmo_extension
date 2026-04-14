@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__openai-intern__review",
+      "mcp__openai-intern__analyze",
+      "Bash(cd:*)",
+      "WebFetch(domain:link.leadmomentum.net)",
+      "WebSearch",
+      "WebFetch(domain:help.gohighlevel.com)",
+      "WebFetch(domain:extendly.helpjuice.com)",
+      "Bash(rm:*)",
+      "Bash(ssh:*)",
+      "Bash(zip:*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /home/mk/projects/extensions/leadmo/.claude/hooks/auto-package.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

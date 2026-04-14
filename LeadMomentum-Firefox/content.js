@@ -41,7 +41,7 @@ const PRESETS = {
             city:        "#City, #Home_City",
             state:       "#State, #Home_State",
             zipcode:     "#Zipcode, #Home_Zip",
-            birthdate:   "#DOB"
+            birthdate:   "#DOB, #Applicant_DOB"
         }
     }
 };
@@ -407,6 +407,28 @@ function grab_data(mappings) {
             if (dobInput) profile_data.birthdate = dobInput.value || "";
         }
     }
+
+    // Special handling for Intruity OneLink DOB on Health/Life tab (tab4)
+    if (!profile_data.birthdate && window.location.href.includes("onelink.intruity.com")) {
+        let healthTab = document.querySelector("#tab4");
+        if (healthTab && typeof Show_Tab_Panel === "function") {
+            Show_Tab_Panel(4);
+            // Wait for DOM to update, then read DOB and save
+            setTimeout(function () {
+                let dobEl = document.querySelector("#Applicant_DOB");
+                if (dobEl && dobEl.value) {
+                    profile_data.birthdate = dobEl.value;
+                }
+                save_profile_data(profile_data);
+            }, 150);
+            return;
+        }
+    }
+
+    save_profile_data(profile_data);
+}
+
+function save_profile_data(profile_data) {
 
     if (profile_data.phone) {
         profile_data.phone = format_phone(profile_data.phone);

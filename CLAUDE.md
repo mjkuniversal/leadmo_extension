@@ -61,6 +61,8 @@ leadmo/
 | 3.1 | Pick mode now opens a detached window so the UI stays visible while selecting page elements. |
 | 5.0 | Migrated from GHL v1 API (`rest.gohighlevel.com`) to v2 API (`services.leadconnectorhq.com`). Requires Location ID + Private Integration Token instead of v1 location API key. |
 | 5.1 | Persistent popup window (stays open until closed via X button). Fixed content script injection on iframe-heavy pages (VICIdial). |
+| 5.4 | Added `#Applicant_DOB` selector for Intruity OneLink Health/Life tab DOB field. |
+| 5.5 | Auto-clicks Health/Life tab on Intruity OneLink to grab DOB when not on Lead tab. |
 
 ## Architecture
 

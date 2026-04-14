@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/mk/projects/extensions/leadmo/.claude/check-archive.sh",
+            "timeout": 10,
+            "statusMessage": "Checking for unarchived versions..."
+          }
+        ]
+      }
+    ]
+  }
+}
