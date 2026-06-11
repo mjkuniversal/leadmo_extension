@@ -6,17 +6,20 @@
    - Existing API key / workflow / tag / phone check preserved
    ============================================================ */
 
-// Maps profile_data keys → GHL survey query parameter names
-// Note: GHL compound address field and date fields don't reliably pre-fill via URL params.
-// Address sub-fields (street_address, city, state, postal_code) are included but may not work
-// depending on the survey builder's Query Key configuration.
+// Maps profile_data keys → GHL survey query parameter names. Array values
+// send the same data under multiple keys. Verified June 2026 against the
+// live "Everything Survey": GHL's standard hidden Street Address field uses
+// query key "address" (not "street_address") — we send both so either
+// builder configuration captures it. All other standard hidden fields
+// (first_name, last_name, phone, email, date_of_birth, city, state,
+// postal_code) match these names exactly.
 const SURVEY_PARAM_MAP = {
     first_name: "first_name",
     last_name: "last_name",
     phone: "phone",
     email: "email",
     birthdate: "date_of_birth",
-    address: "street_address",
+    address: ["street_address", "address"],
     city: "city",
     state: "state",
     zipcode: "postal_code"
@@ -499,12 +502,7 @@ $(document).ready(function () {
                 $("#survey_status").text("Saved survey URL is invalid.");
                 return;
             }
-            for (let key in SURVEY_PARAM_MAP) {
-                let value = profile[key];
-                if (value) {
-                    surveyUrl.searchParams.set(SURVEY_PARAM_MAP[key], value);
-                }
-            }
+            apply_survey_params(surveyUrl, profile);
 
             currentSurveyUrl = surveyUrl.href;
             $("#survey_frame").attr("src", currentSurveyUrl);
@@ -1010,6 +1008,20 @@ function load_contact_data(skipSurveyAutoShow) {
     });
 }
 
+// Set every mapped query param on the survey URL; array map values send
+// the same profile value under each listed key.
+function apply_survey_params(surveyUrl, profile) {
+    for (let key in SURVEY_PARAM_MAP) {
+        let value = profile[key];
+        if (!value) continue;
+        let paramNames = SURVEY_PARAM_MAP[key];
+        if (!Array.isArray(paramNames)) paramNames = [paramNames];
+        for (let i = 0; i < paramNames.length; i++) {
+            surveyUrl.searchParams.set(paramNames[i], value);
+        }
+    }
+}
+
 function refresh_survey_iframe(profile, skipAutoShow) {
     chrome.storage.local.get(["survey_url"], function (data) {
         let baseUrl = data.survey_url;
@@ -1028,12 +1040,7 @@ function refresh_survey_iframe(profile, skipAutoShow) {
             if (surveyUrl.protocol !== "https:") return;
         } catch (e) { return; }
 
-        for (let key in SURVEY_PARAM_MAP) {
-            let value = profile[key];
-            if (value) {
-                surveyUrl.searchParams.set(SURVEY_PARAM_MAP[key], value);
-            }
-        }
+        apply_survey_params(surveyUrl, profile);
 
         currentSurveyUrl = surveyUrl.href;
         $("#survey_frame").attr("src", currentSurveyUrl);

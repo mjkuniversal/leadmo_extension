@@ -261,10 +261,10 @@ test.describe("LeadMomentum Chrome Extension", () => {
     });
   });
 
-  // ── Survey Param Mapping (v5.2 address fix) ────────────────
+  // ── Survey Param Mapping (v5.2 address fix, v5.7 dual key) ──
 
   test.describe("Survey Param Mapping", () => {
-    test("maps address to street_address (not address1)", async ({
+    test("sends address as both street_address and address (not address1)", async ({
       popupPage,
     }) => {
       await setStorageLocal(popupPage, {
@@ -289,6 +289,9 @@ test.describe("LeadMomentum Chrome Extension", () => {
         .getAttribute("src");
 
       expect(iframeSrc).toContain("street_address=123");
+      // GHL's standard hidden Street Address field uses query key
+      // "address" (verified live June 2026) — both keys are sent.
+      expect(iframeSrc).toContain("address=123");
       expect(iframeSrc).toContain("city=Springfield");
       expect(iframeSrc).toContain("state=IL");
       expect(iframeSrc).toContain("postal_code=62701");
