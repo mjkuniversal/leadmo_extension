@@ -1,5 +1,5 @@
 /* ============================================================
-   LeadMomentum Popup v5.1 (Firefox)
+   LeadMomentum Popup v5.6 (Firefox)
    - Field detection + mapping dropdowns
    - Click-to-select via detached window (stays open during pick)
    - Per-domain mapping persistence
@@ -29,8 +29,10 @@ let isDetachedWindow = urlParams.has("tabId");
 // Tracks the current tab's domain and detected fields
 let currentDomain = "";
 let currentTabId = null;
+let currentFrameId = 0;       // frame hosting the richest form (iframe CRMs)
 let detectedFields = [];
 let currentSurveyUrl = "";
+let localPickActive = false;  // mirror of lm_pick_state.active for unload cleanup
 
 // ── Message listener (from background + content) ────────────
 chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
@@ -55,12 +57,47 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
 
     if ((msg.from === 'background') && (msg.subject === 'workflowAdded')) {
         sendResponse({});
-        $("#workflows_box").prepend('<p id="notification_message">Workflow added succesfully</p>');
+        $("#workflows_box").prepend('<p id="notification_message">Workflow added successfully</p>');
         setTimeout(function () {
             $("#notification_message").remove();
         }, 2500);
     }
+
+    if ((msg.from === 'background') && (msg.subject === 'contactFailed')) {
+        sendResponse({});
+        show_send_error("Contact NOT created: " + (msg.message || ("error " + msg.status)));
+    }
+
+    if ((msg.from === 'background') && (msg.subject === 'workflowFailed')) {
+        sendResponse({});
+        $("#notification_message").remove();
+        $('<p id="notification_message"></p>')
+            .text("Workflow NOT added: " + (msg.message || ("error " + msg.status)))
+            .prependTo("#workflows_box");
+        setTimeout(function () { $("#notification_message").remove(); }, 6000);
+    }
+
+    if ((msg.from === 'content') && (msg.subject === 'grabEmpty')) {
+        sendResponse({});
+        show_mapping_status("No data captured — check your field mappings and rescan.");
+    }
+
+    // Icon clicked while this window is open: rebind to the user's current tab
+    if ((msg.from === 'background') && (msg.subject === 'retarget')) {
+        sendResponse({});
+        currentTabId = msg.tabId;
+        currentDomain = msg.domain || "";
+        scan_page();
+    }
 });
+
+function show_send_error(message) {
+    $("#notification_message").remove();
+    $('<p id="notification_message"></p>')
+        .text(message || "Send failed.")
+        .prependTo("#tags_box");
+    setTimeout(function () { $("#notification_message").remove(); }, 6000);
+}
 
 // ── Document ready ──────────────────────────────────────────
 $(document).ready(function () {
@@ -83,10 +120,8 @@ $(document).ready(function () {
             return;
         }
         currentDomain = urlParams.get("domain") || "";
-        inject_content_script(currentTabId, function () {
-            check_pick_result(function () {
-                scan_page();
-            });
+        check_pick_result(function () {
+            scan_page(); // scan_page injects the content script itself
         });
     } else {
         chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
@@ -111,26 +146,35 @@ $(document).ready(function () {
                 currentDomain = "";
             }
 
-            // Inject content script + CSS on demand, then scan
-            inject_content_script(currentTabId, function () {
-                check_pick_result(function () {
-                    scan_page();
-                });
+            check_pick_result(function () {
+                scan_page(); // scan_page injects the content script itself
             });
         });
     }
 
-    // Clean up orphaned pick state when detached window closes without picking
-    if (isDetachedWindow) {
-        window.addEventListener("beforeunload", function () {
-            chrome.storage.local.get(["lm_pick_state"], function (data) {
-                if (data.lm_pick_state && data.lm_pick_state.active) {
-                    chrome.storage.local.remove("lm_pick_state");
-                    chrome.tabs.sendMessage(currentTabId, { subject: "cancelPicking" });
-                }
-            });
-        });
-    }
+    // Restore a previously grabbed contact and surface any send result the
+    // user missed while the popup was closed.
+    chrome.storage.local.get(["profile_data", "lm_last_send_result"], function (data) {
+        let p = data.profile_data;
+        if (p && Object.keys(p).some(function (k) { return p[k]; })) {
+            load_contact_data(true); // true = don't auto-switch to the survey view
+        }
+        let res = data.lm_last_send_result;
+        if (res && !res.ok && (Date.now() - (res.ts || 0)) < 120000) {
+            show_send_error(res.message);
+            chrome.storage.local.remove("lm_last_send_result");
+        }
+    });
+
+    // Clean up orphaned pick state when the window closes mid-pick.
+    // Note: async storage.get callbacks don't run during unload, so we rely
+    // on the locally tracked localPickActive flag and fire the calls directly.
+    window.addEventListener("beforeunload", function () {
+        if (localPickActive) {
+            chrome.storage.local.remove("lm_pick_state");
+            chrome.tabs.sendMessage(currentTabId, { subject: "cancelPicking" }, { frameId: currentFrameId });
+        }
+    });
 
     // ── Rescan button ───────────────────────────────────────
     $("#rescan_btn").click(function () {
@@ -141,9 +185,21 @@ $(document).ready(function () {
     // ── Grab Data button ────────────────────────────────────
     $("#grab_data_btn").click(function () {
         let mappings = collect_mappings();
-        chrome.tabs.sendMessage(currentTabId, {
-            subject: "grabData",
-            mappings: mappings
+        // Re-inject first: navigation destroys the content script, and the
+        // double-injection guard makes this idempotent.
+        inject_content_script(currentTabId, function () {
+            chrome.tabs.sendMessage(currentTabId, {
+                subject: "grabData",
+                mappings: mappings
+            }, { frameId: currentFrameId }, function (response) {
+                if (chrome.runtime.lastError || !response) {
+                    show_mapping_status("Grab failed — click Scan and try again.");
+                    return;
+                }
+                if (response.status === "error") {
+                    show_mapping_status("Grab error: " + response.error);
+                }
+            });
         });
         return false;
     });
@@ -173,12 +229,15 @@ $(document).ready(function () {
         let row = $(this).closest("tr");
         let fieldKey = row.data("field");
 
+        localPickActive = true;
         chrome.storage.local.set({
             lm_pick_state: { active: true, fieldKey: fieldKey, domain: currentDomain, result: null }
         }, function () {
-            chrome.tabs.sendMessage(currentTabId, {
-                subject: "startPicking",
-                fieldKey: fieldKey
+            inject_content_script(currentTabId, function () {
+                chrome.tabs.sendMessage(currentTabId, {
+                    subject: "startPicking",
+                    fieldKey: fieldKey
+                }, { frameId: currentFrameId });
             });
 
             if (!isDetachedWindow) {
@@ -279,6 +338,13 @@ $(document).ready(function () {
     $("#add_to_workflow").click(function () {
         $("#notification_message").remove();
         let workflow_id = $("#workflows_dd").val();
+        if (!workflow_id) {
+            $('<p id="notification_message"></p>')
+                .text("Select a workflow first. If the list is empty, verify your API key has workflow access.")
+                .prependTo("#workflows_box");
+            setTimeout(function () { $("#notification_message").remove(); }, 4000);
+            return false;
+        }
         let tag = $("#tags_dd").val();
         chrome.runtime.sendMessage({
             from: 'popup',
@@ -297,7 +363,9 @@ $(document).ready(function () {
         }, function () {
             let phone = $("#phone_for_check").val();
             $.ajax({
-                url: "https://api.landlinescrubber.com/api/check_number?p=" + phone + "&k=" + landlinescrubber_api_key,
+                url: "https://api.landlinescrubber.com/api/check_number"
+                    + "?p=" + encodeURIComponent(phone)
+                    + "&k=" + encodeURIComponent(landlinescrubber_api_key),
                 method: "GET",
                 success: function (response) {
                     let dnc = "no";
@@ -312,8 +380,9 @@ $(document).ready(function () {
                     }
                     $("#linetype").text(linetype);
                 },
-                error: function (xhr, ajaxOptions, thrownError) {
-                    alert("Error status:" + xhr.status + "\n" + "Error message:" + thrownError);
+                error: function (xhr) {
+                    $("#dnc").text("");
+                    $("#linetype").text("check failed (" + (xhr.status || "network error") + ")");
                 }
             });
         });
@@ -407,22 +476,82 @@ $(document).ready(function () {
 });
 
 // ── Inject content script on demand ──────────────────────────
+// Tries all frames first (covers iframe-hosted CRM forms); if that fails
+// (e.g. activeTab on a page with cross-origin iframes), falls back to the
+// top frame only. The double-injection guard in content.js makes repeated
+// calls safe, so callers re-inject before every scan/grab/pick.
 function inject_content_script(tabId, callback) {
-    callback();
+    chrome.scripting.insertCSS({
+        target: { tabId: tabId, allFrames: true },
+        files: ["style.css"]
+    }).catch(function () {
+        return chrome.scripting.insertCSS({
+            target: { tabId: tabId },
+            files: ["style.css"]
+        });
+    }).catch(function (err) { console.warn("LeadMomentum: insertCSS failed:", err); });
+
+    chrome.scripting.executeScript({
+        target: { tabId: tabId, allFrames: true },
+        files: ["jquery.min.js", "content.js"]
+    }).then(function () {
+        callback();
+    }).catch(function () {
+        chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            files: ["jquery.min.js", "content.js"]
+        }).then(function () {
+            callback();
+        }).catch(function (err) {
+            console.warn("LeadMomentum: executeScript failed:", err);
+            show_mapping_status("Cannot inject into this page.");
+        });
+    });
+}
+
+// ── Pick the frame with the most form fields ────────────────
+function pick_best_frame(callback) {
+    chrome.scripting.executeScript({
+        target: { tabId: currentTabId, allFrames: true },
+        func: function () {
+            return document.querySelectorAll("input, select, textarea").length;
+        }
+    }).then(function (results) {
+        let best = { frameId: 0, count: -1 };
+        (results || []).forEach(function (r) {
+            let count = r.result || 0;
+            if (count > best.count) {
+                best = { frameId: r.frameId, count: count };
+            }
+        });
+        currentFrameId = best.frameId;
+        callback();
+    }).catch(function () {
+        currentFrameId = 0;
+        callback();
+    });
 }
 
 // ── Scan page for fields ────────────────────────────────────
-function scan_page(retryCount) {
+function scan_page() {
     if (!currentTabId) return;
-    retryCount = retryCount || 0;
-
     show_mapping_status("Scanning...");
-    chrome.tabs.sendMessage(currentTabId, { subject: "detectFields" }, function (response) {
+    // Always re-inject: navigation destroys the content script, and the
+    // injection guard makes this idempotent.
+    inject_content_script(currentTabId, function () {
+        pick_best_frame(function () {
+            send_detect_fields(0);
+        });
+    });
+}
+
+function send_detect_fields(retryCount) {
+    chrome.tabs.sendMessage(currentTabId, { subject: "detectFields" }, { frameId: currentFrameId }, function (response) {
         if (chrome.runtime.lastError) {
             let errorMessage = chrome.runtime.lastError.message || "";
             // Content script may not have registered its listener yet — retry after a delay
             if (retryCount < 3) {
-                setTimeout(function () { scan_page(retryCount + 1); }, 300);
+                setTimeout(function () { send_detect_fields(retryCount + 1); }, 300);
             } else {
                 if (errorMessage.includes("before a response was received")) {
                     show_mapping_status("No fields detected on this page.");
@@ -434,6 +563,10 @@ function scan_page(retryCount) {
         }
         if (!response || !response.fields) {
             show_mapping_status("No fields detected.");
+            return;
+        }
+        if (response.error) {
+            show_mapping_status("Scan error: " + response.error);
             return;
         }
 
@@ -452,27 +585,34 @@ function scan_page(retryCount) {
                 let mapped = Object.keys(autoMap).length;
                 show_mapping_status(detectedFields.length + " fields found, " + mapped + " auto-mapped.");
             }
+            // Apply a pick completed while this window was closed — after the
+            // scan, so populate_dropdowns can't wipe it (the old fixed-timer
+            // approach raced the scan).
+            if (pendingPickResult) {
+                apply_pick_result(pendingPickResult.fieldKey, pendingPickResult.result);
+                pendingPickResult = null;
+            }
         });
     });
 }
 
 // ── Populate dropdowns with detected fields ─────────────────
+// Options are built via the DOM (never string-concatenated HTML): selectors
+// like input[name="phone"] contain double quotes that corrupt a concatenated
+// value attribute, silently truncating the stored selector.
 function populate_dropdowns(fields) {
-    let options = '<option value="">— none —</option>';
-    for (let i = 0; i < fields.length; i++) {
-        let f = fields[i];
-        let display = f.label || f.name || f.id || f.placeholder || f.selector;
-        // Truncate long labels
-        if (display.length > 40) display = display.substring(0, 37) + "...";
-        let valHint = f.currentValue ? " [" + f.currentValue.substring(0, 20) + "]" : "";
-        // Escape HTML
-        let safeDisplay = $("<span>").text(display + valHint).html();
-        let safeSelector = $("<span>").text(f.selector).html();
-        options += '<option value="' + safeSelector + '">' + safeDisplay + '</option>';
-    }
-
     $("#mapping_table .mapping_dd").each(function () {
-        $(this).html(options);
+        let dd = $(this);
+        dd.empty();
+        dd.append($("<option>").val("").text("— none —"));
+        for (let i = 0; i < fields.length; i++) {
+            let f = fields[i];
+            let display = f.label || f.name || f.id || f.placeholder || f.selector;
+            // Truncate long labels
+            if (display.length > 40) display = display.substring(0, 37) + "...";
+            let valHint = f.currentValue ? " [" + f.currentValue.substring(0, 20) + "]" : "";
+            dd.append($("<option>").val(f.selector).text(display + valHint));
+        }
     });
 }
 
@@ -483,7 +623,20 @@ function apply_mapping(mapping) {
         if (!selector) continue;
         let row = $('#mapping_table tr[data-field="' + fieldKey + '"]');
         if (row.length) {
-            row.find(".mapping_dd").val(selector);
+            let dd = row.find(".mapping_dd");
+            dd.val(selector);
+            if (dd.val() !== selector) {
+                // Saved/picked selector isn't among the detected fields (element
+                // hidden at scan time, or a picked span/div) — add it instead of
+                // silently dropping the mapping.
+                dd.append($("<option>").val(selector).text(selector));
+                dd.val(selector);
+                detectedFields.push({
+                    selector: selector, label: selector,
+                    name: "", id: "", placeholder: "",
+                    tagName: "", type: "", currentValue: ""
+                });
+            }
             let field = find_field_by_selector(selector);
             row.find(".field_preview").text(field ? field.currentValue : "");
         }
@@ -521,12 +674,13 @@ function apply_pick_result(fieldKey, result) {
     let row = $('#mapping_table tr[data-field="' + fieldKey + '"]');
     if (row.length) {
         let dd = row.find(".mapping_dd");
-        if (dd.find('option[value="' + CSS.escape(result.selector) + '"]').length === 0) {
+        let exists = dd.find("option").filter(function () {
+            return this.value === result.selector;
+        }).length > 0;
+        if (!exists) {
             let display = result.displayName || result.selector;
             let valHint = result.currentValue ? " [" + result.currentValue.substring(0, 20) + "]" : "";
-            let safeDisplay = $("<span>").text(display + valHint).html();
-            let safeSelector = $("<span>").text(result.selector).html();
-            dd.append('<option value="' + safeSelector + '">' + safeDisplay + '</option>');
+            dd.append($("<option>").val(result.selector).text(display + valHint));
             detectedFields.push({
                 selector: result.selector,
                 label: result.displayName,
@@ -543,9 +697,10 @@ function apply_pick_result(fieldKey, result) {
 
 // ── Listen for live pick completion (detached window) ────────
 chrome.storage.onChanged.addListener(function (changes) {
-    if (changes.lm_pick_state && changes.lm_pick_state.newValue) {
+    if (changes.lm_pick_state) {
         let state = changes.lm_pick_state.newValue;
-        if (!state.active && state.result && state.fieldKey) {
+        if (!state || !state.active) localPickActive = false;
+        if (state && !state.active && state.result && state.fieldKey) {
             apply_pick_result(state.fieldKey, state.result);
             chrome.storage.local.remove("lm_pick_state");
         }
@@ -553,22 +708,15 @@ chrome.storage.onChanged.addListener(function (changes) {
 });
 
 // ── Check for pending pick result (from previous session) ────
+let pendingPickResult = null; // applied by send_detect_fields after the scan completes
+
 function check_pick_result(callback) {
     chrome.storage.local.get(["lm_pick_state"], function (data) {
         let state = data.lm_pick_state;
         if (state && !state.active && state.result && state.fieldKey) {
-            let fieldKey = state.fieldKey;
-            let result = state.result;
-
+            pendingPickResult = { fieldKey: state.fieldKey, result: state.result };
             chrome.storage.local.remove("lm_pick_state", function () {
-                let originalCallback = callback;
-                callback = function () {};
-                originalCallback();
-
-                // Wait a tick for scan_page to finish populating
-                setTimeout(function () {
-                    apply_pick_result(fieldKey, result);
-                }, 500);
+                callback();
             });
             return;
         }
@@ -628,6 +776,8 @@ function fetch_workflows_and_tags() {
             $("#notification_message").remove();
             let errorMsg = response.error === 'missing-location-id'
                 ? 'Location ID is missing. Re-add your account with a Location ID.'
+                : response.error === 'no-api-key'
+                ? 'No account selected. Add and select an API key below.'
                 : 'API error (' + response.error + '). Verify your API key and Location ID are valid.';
             $('<p id="notification_message"></p>')
                 .text(errorMsg)
@@ -706,8 +856,9 @@ function load_workflows(workflows) {
     $('<select id="workflows_dd"></select>').insertBefore($("#add_to_workflow"));
     if (workflows.length) {
         for (let i = 0; i < workflows.length; i++) {
-            let option = '<option value="' + workflows[i]["id"] + '">' + workflows[i]["name"] + '</option>';
-            $("#workflows_dd").append(option);
+            $("#workflows_dd").append(
+                $("<option>").val(workflows[i]["id"]).text(workflows[i]["name"])
+            );
         }
         selectize_dd($("#workflows_dd"));
     }
@@ -720,14 +871,15 @@ function load_tags(tags) {
     $('<select id="tags_dd"><option value=""></option></select>').insertBefore($("#send_to_leadmomentum"));
     if (tags.length) {
         for (let i = 0; i < tags.length; i++) {
-            let option = '<option value="' + tags[i]["name"] + '">' + tags[i]["name"] + '</option>';
-            $("#tags_dd").append(option);
+            $("#tags_dd").append(
+                $("<option>").val(tags[i]["name"]).text(tags[i]["name"])
+            );
         }
         selectize_dd($("#tags_dd"));
     }
 }
 
-function load_contact_data() {
+function load_contact_data(skipSurveyAutoShow) {
     chrome.storage.local.get(['profile_data'], function (data) {
         let profile_data = {};
         if (data['profile_data'] && (data['profile_data'] != 'undefined'))
@@ -751,11 +903,11 @@ function load_contact_data() {
         $("#phone_for_check").val(profile_data["phone"]);
 
         // Auto-refresh survey with new contact data
-        refresh_survey_iframe(profile_data);
+        refresh_survey_iframe(profile_data, skipSurveyAutoShow);
     });
 }
 
-function refresh_survey_iframe(profile) {
+function refresh_survey_iframe(profile, skipAutoShow) {
     chrome.storage.local.get(["survey_url"], function (data) {
         let baseUrl = data.survey_url;
         if (!baseUrl) return;
@@ -784,7 +936,7 @@ function refresh_survey_iframe(profile) {
         $("#survey_frame").attr("src", currentSurveyUrl);
 
         // Auto-show survey if not already visible
-        if ($("#survey_frame_container").is(":hidden")) {
+        if (!skipAutoShow && $("#survey_frame_container").is(":hidden")) {
             $("#wrapper").hide();
             $("#survey_frame_container").show();
         }

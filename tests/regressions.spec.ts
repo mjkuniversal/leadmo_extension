@@ -1,0 +1,415 @@
+import {
+  test,
+  expect,
+  openPopupForTab,
+  getChromeTabId,
+  getStorageLocal,
+  setStorageLocal,
+  clearStorageLocal,
+} from "./fixtures";
+import type { Page, BrowserContext } from "@playwright/test";
+
+/**
+ * Regression suite for the v5.6 bug-sweep. Each test pins a defect that was
+ * confirmed by the audit:
+ *  - jQuery-only :contains() preset selector killing VanillaSoft scans
+ *  - double quotes in tag[name="..."] selectors corrupting <option value>
+ *  - empty grabs overwriting previously grabbed contact data
+ *  - silent create-contact API failures (now upsert + error surfacing)
+ *  - "Add to Workflow" with nothing selected
+ *  - iframe-hosted forms invisible to top-frame-only injection
+ *  - stale content script after tab navigation
+ *  - contact preview lost on popup reopen
+ *  - workflow/tag names with quotes truncating dropdown values
+ */
+
+async function waitForScan(popup: Page) {
+  await popup.waitForFunction(() => {
+    const status = document.getElementById("mapping_status");
+    return (
+      status &&
+      status.textContent !== "" &&
+      status.textContent !== "Scanning..."
+    );
+  }, { timeout: 10_000 });
+}
+
+/**
+ * Poll storage for profile_data inside a single evaluate so the wait and the
+ * read can't race each other. Returns the profile object or null on timeout.
+ */
+async function grabAndWaitForProfile(popup: Page): Promise<any> {
+  await popup.locator("#grab_data_btn").click();
+  return popup.evaluate(async () => {
+    for (let i = 0; i < 40; i++) {
+      const p: any = await new Promise((res) =>
+        chrome.storage.local.get(["profile_data"], (d) => res(d.profile_data))
+      );
+      if (p && p.first_name) return p;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    return null;
+  });
+}
+
+async function openScannedPopup(
+  context: BrowserContext,
+  extensionId: string,
+  fixtureBaseUrl: string,
+  fixtureFile: string
+): Promise<{ popup: Page; formPage: Page }> {
+  const formPage = await context.newPage();
+  await formPage.goto(`${fixtureBaseUrl}/${fixtureFile}`);
+  await formPage.waitForLoadState("domcontentloaded");
+  const tabId = await getChromeTabId(context, extensionId, fixtureFile);
+  const popup = await openPopupForTab(context, extensionId, tabId, "127.0.0.1");
+  await waitForScan(popup);
+  return { popup, formPage };
+}
+
+test.describe("v5.6 Regressions", () => {
+  test.beforeEach(async ({ popupPage }) => {
+    await clearStorageLocal(popupPage);
+  });
+
+  // ── VanillaSoft preset: scan must survive, DOB via table scrape ──
+
+  test("scans a VanillaSoft-shaped page and grabs DOB from the info table", async ({
+    context,
+    extensionId,
+    fixtureBaseUrl,
+  }) => {
+    const { popup, formPage } = await openScannedPopup(
+      context, extensionId, fixtureBaseUrl, "vanillasoft.net-contact.html"
+    );
+
+    // The old preset contained :contains() which threw in querySelector and
+    // surfaced as "Cannot scan this page (content script not loaded)."
+    const statusText = await popup.locator("#mapping_status").textContent();
+    expect(statusText).toContain("fields found");
+
+    const profile = await grabAndWaitForProfile(popup);
+    expect(profile).toBeTruthy();
+    expect(profile.first_name).toBe("Vana");
+    expect(profile.last_name).toBe("Soft");
+    // DOB is not an input on this view — must come from the
+    // .tableInfolabel/.spanField special-case scrape.
+    expect(profile.birthdate).toBe("03/15/1985");
+
+    await popup.close();
+    await formPage.close();
+  });
+
+  // ── Quote-safe dropdowns for name-only selectors ──────────────
+
+  test("auto-maps and grabs fields whose selectors contain double quotes", async ({
+    context,
+    extensionId,
+    fixtureBaseUrl,
+  }) => {
+    const { popup, formPage } = await openScannedPopup(
+      context, extensionId, fixtureBaseUrl, "name-only-form.html"
+    );
+
+    // The generated selector is input[name="first_name"] — the old
+    // string-concatenated <option value="..."> truncated it at the inner
+    // quote, silently unmapping the field.
+    const ddValue = await popup
+      .locator('tr[data-field="first_name"] .mapping_dd')
+      .inputValue();
+    expect(ddValue).toBe('input[name="first_name"]');
+
+    const profile = await grabAndWaitForProfile(popup);
+    expect(profile).toBeTruthy();
+    expect(profile.first_name).toBe("Quota");
+    expect(profile.last_name).toBe("Crusher");
+    expect(profile.email).toBe("quota@example.com");
+
+    await popup.close();
+    await formPage.close();
+  });
+
+  // ── Empty grab must not clobber stored contact data ───────────
+
+  test("a grab that matches nothing leaves stored profile_data untouched", async ({
+    context,
+    extensionId,
+    fixtureBaseUrl,
+    popupPage,
+  }) => {
+    await setStorageLocal(popupPage, {
+      profile_data: { first_name: "Keep", last_name: "Me", phone: "+15550001111" },
+    });
+
+    const { popup, formPage } = await openScannedPopup(
+      context, extensionId, fixtureBaseUrl, "empty-page.html"
+    );
+
+    await popup.locator("#grab_data_btn").click();
+
+    // The guard reports the empty grab instead of saving empties
+    await popup.waitForFunction(() => {
+      const status = document.getElementById("mapping_status");
+      return status && status.textContent?.includes("No data captured");
+    }, { timeout: 5_000 });
+
+    const profile = await getStorageLocal(popup, "profile_data");
+    expect(profile.first_name).toBe("Keep");
+    expect(profile.last_name).toBe("Me");
+
+    await popup.close();
+    await formPage.close();
+  });
+
+  // ── Send To LeadMomentum: upsert + visible outcomes ────────────
+
+  test("send success calls /contacts/upsert and shows a confirmation", async ({
+    context,
+    popupPage,
+  }) => {
+    let upsertCalled = false;
+    await context.route("**/contacts/upsert", (route) => {
+      upsertCalled = true;
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ new: true, contact: { id: "contact-123" } }),
+      });
+    });
+
+    await setStorageLocal(popupPage, {
+      api_keys: [["Test", "fake-key", "loc-1"]],
+      selected_api_key: "fake-key",
+      selected_location_id: "loc-1",
+      profile_data: { first_name: "Jane", last_name: "Lead", phone: "+15551234567" },
+    });
+    await popupPage.reload();
+
+    await popupPage.locator("#send_to_leadmomentum").click();
+
+    await popupPage.waitForFunction(() => {
+      const el = document.getElementById("notification_message");
+      return el && el.textContent?.includes("Contact created");
+    }, { timeout: 5_000 });
+
+    expect(upsertCalled).toBe(true);
+  });
+
+  test("send failure surfaces the GHL error instead of failing silently", async ({
+    context,
+    popupPage,
+  }) => {
+    await context.route("**/contacts/upsert", (route) => {
+      route.fulfill({
+        status: 422,
+        contentType: "application/json",
+        body: JSON.stringify({ statusCode: 422, message: ["email must be an email"] }),
+      });
+    });
+
+    await setStorageLocal(popupPage, {
+      api_keys: [["Test", "fake-key", "loc-1"]],
+      selected_api_key: "fake-key",
+      selected_location_id: "loc-1",
+      profile_data: { first_name: "Bad", email: "not-an-email" },
+    });
+    await popupPage.reload();
+
+    await popupPage.locator("#send_to_leadmomentum").click();
+
+    await popupPage.waitForFunction(() => {
+      const el = document.getElementById("notification_message");
+      return el && el.textContent?.includes("NOT created");
+    }, { timeout: 5_000 });
+
+    const errorText = await popupPage.locator("#notification_message").textContent();
+    expect(errorText).toContain("email must be an email");
+
+    // Outcome is also persisted for popups opened later
+    const lastResult = await getStorageLocal(popupPage, "lm_last_send_result");
+    expect(lastResult.ok).toBe(false);
+  });
+
+  test("empty profile fields are stripped from the upsert payload", async ({
+    context,
+    popupPage,
+  }) => {
+    let payload: any = null;
+    await context.route("**/contacts/upsert", (route) => {
+      payload = route.request().postDataJSON();
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ new: true, contact: { id: "c-1" } }),
+      });
+    });
+
+    await setStorageLocal(popupPage, {
+      api_keys: [["Test", "fake-key", "loc-1"]],
+      selected_api_key: "fake-key",
+      selected_location_id: "loc-1",
+      // Typical grab where the page had no email/DOB: empty strings used to
+      // be sent verbatim and 422 the whole request.
+      profile_data: {
+        first_name: "NoEmail", last_name: "Lead", phone: "+15551230000",
+        email: "", birthdate: "", address: "", city: "", state: "", zipcode: "",
+      },
+    });
+    await popupPage.reload();
+
+    await popupPage.locator("#send_to_leadmomentum").click();
+    await popupPage.waitForFunction(() => {
+      const el = document.getElementById("notification_message");
+      return el && el.textContent?.includes("Contact created");
+    }, { timeout: 5_000 });
+
+    expect(payload).toBeTruthy();
+    expect(payload.locationId).toBe("loc-1");
+    expect(payload.firstName).toBe("NoEmail");
+    expect(payload).not.toHaveProperty("email");
+    expect(payload).not.toHaveProperty("dateOfBirth");
+    expect(payload).not.toHaveProperty("address1");
+  });
+
+  // ── Add to Workflow guard ──────────────────────────────────────
+
+  test("Add to Workflow with no workflow selected shows guidance and sends nothing", async ({
+    context,
+    popupPage,
+  }) => {
+    let anyApiCall = false;
+    await context.route("**/services.leadconnectorhq.com/**", (route) => {
+      anyApiCall = true;
+      route.fulfill({ status: 401, body: "{}" });
+    });
+
+    await popupPage.locator("#add_to_workflow").click();
+
+    await popupPage.waitForFunction(() => {
+      const el = document.getElementById("notification_message");
+      return el && el.textContent?.includes("Select a workflow");
+    }, { timeout: 5_000 });
+
+    expect(anyApiCall).toBe(false);
+  });
+
+  // ── Iframe-hosted forms ────────────────────────────────────────
+
+  test("detects and grabs a form inside a same-origin iframe", async ({
+    context,
+    extensionId,
+    fixtureBaseUrl,
+  }) => {
+    const formPage = await context.newPage();
+    await formPage.goto(`${fixtureBaseUrl}/iframe-host.html`);
+    // Make sure the iframe content is actually loaded before the popup
+    // scans — otherwise frame selection legitimately sees zero fields.
+    await formPage.frameLocator("iframe").locator("#first_name").waitFor({ timeout: 10_000 });
+
+    const tabId = await getChromeTabId(context, extensionId, "iframe-host.html");
+    const popup = await openPopupForTab(context, extensionId, tabId, "127.0.0.1");
+    await waitForScan(popup);
+
+    const statusText = await popup.locator("#mapping_status").textContent();
+    expect(statusText).toContain("fields found");
+    // The top frame has zero fields; anything found came from the iframe
+    expect(statusText).not.toMatch(/^0 fields/);
+
+    const profile = await grabAndWaitForProfile(popup);
+    expect(profile).toBeTruthy();
+    expect(profile.first_name).toBe("John");
+    expect(profile.last_name).toBe("Doe");
+
+    await popup.close();
+    await formPage.close();
+  });
+
+  // ── Stale content script after navigation ──────────────────────
+
+  test("rescan and grab still work after the tab navigates", async ({
+    context,
+    extensionId,
+    fixtureBaseUrl,
+  }) => {
+    const { popup, formPage } = await openScannedPopup(
+      context, extensionId, fixtureBaseUrl, "contact-form.html"
+    );
+
+    // Navigate the lead tab — this destroys the injected content script
+    await formPage.goto(`${fixtureBaseUrl}/name-only-form.html`);
+    await formPage.waitForLoadState("domcontentloaded");
+
+    // Rescan must re-inject rather than messaging a dead document
+    await popup.locator("#rescan_btn").click();
+    await popup.waitForFunction(() => {
+      const status = document.getElementById("mapping_status");
+      return status && status.textContent?.includes("fields found");
+    }, { timeout: 10_000 });
+
+    const profile = await grabAndWaitForProfile(popup);
+    expect(profile).toBeTruthy();
+    expect(profile.first_name).toBe("Quota");
+
+    await popup.close();
+    await formPage.close();
+  });
+
+  // ── Contact preview restored on reopen ─────────────────────────
+
+  test("reopened popup restores the grabbed contact preview without hijacking the view", async ({
+    popupPage,
+  }) => {
+    await setStorageLocal(popupPage, {
+      profile_data: { first_name: "Resta", last_name: "Ured", phone: "+15559998888" },
+      survey_url: "https://forms.example.com/s",
+    });
+    await popupPage.reload();
+
+    await popupPage.waitForFunction(() => {
+      const el = document.getElementById("first_name");
+      return el && el.textContent === "Resta";
+    }, { timeout: 5_000 });
+
+    await expect(popupPage.locator("#contact_preview")).toBeVisible();
+    // Restoring on open must not auto-switch to the survey iframe view
+    await expect(popupPage.locator("#wrapper")).toBeVisible();
+    await expect(popupPage.locator("#survey_frame_container")).toBeHidden();
+  });
+
+  // ── Quote-safe workflow/tag dropdowns ──────────────────────────
+
+  test("tag names containing quotes keep their full value in the dropdown", async ({
+    context,
+    popupPage,
+  }) => {
+    const trickyTag = `Bob's "VIP" List`;
+    await context.route("**/workflows/**", (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ workflows: [{ id: "wf-1", name: `Hot "Leads" Now` }] }),
+      });
+    });
+    await context.route("**/locations/*/tags", (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ tags: [{ id: "t-1", name: trickyTag, locationId: "loc-1" }] }),
+      });
+    });
+
+    await setStorageLocal(popupPage, {
+      api_keys: [["Test", "fake-key", "loc-1"]],
+      selected_api_key: "fake-key",
+      selected_location_id: "loc-1",
+    });
+    await popupPage.reload();
+
+    await popupPage.waitForSelector("#tags_dd option", { state: "attached", timeout: 5_000 });
+
+    const tagValues = await popupPage.evaluate(() =>
+      Array.from(document.querySelectorAll("#tags_dd option")).map((o) => (o as HTMLOptionElement).value)
+    );
+    expect(tagValues).toContain(trickyTag);
+  });
+});

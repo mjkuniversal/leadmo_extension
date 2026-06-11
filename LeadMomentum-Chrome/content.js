@@ -26,7 +26,10 @@ const PRESETS = {
             city:        "#City",
             state:       "#State",
             zipcode:     "#ZipCode",
-            birthdate:   ".otherInformationDateTimePicker, .tableInfolabel:contains('DOB') + td .spanField"
+            // NOTE: must stay valid for document.querySelector — no jQuery-only
+            // pseudo-selectors like :contains(). The read-only table DOB is
+            // handled by the special-case scrape in grab_data().
+            birthdate:   ".otherInformationDateTimePicker"
         }
     },
     intruity: {
@@ -70,8 +73,14 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     if (sender.id !== chrome.runtime.id) return;
 
     if (msg.subject === "detectFields") {
-        let result = detect_fields();
-        sendResponse({ fields: result.fields, autoMap: result.autoMap });
+        // Never let a detection error kill the message port — the popup
+        // misreads a dead port as "content script not loaded".
+        try {
+            let result = detect_fields();
+            sendResponse({ fields: result.fields, autoMap: result.autoMap });
+        } catch (e) {
+            sendResponse({ fields: [], autoMap: {}, error: String(e) });
+        }
         return;
     }
 
@@ -88,8 +97,12 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     }
 
     if (msg.subject === "grabData") {
-        grab_data(msg.mappings);
-        sendResponse({ status: "ok" });
+        try {
+            grab_data(msg.mappings);
+            sendResponse({ status: "ok" });
+        } catch (e) {
+            sendResponse({ status: "error", error: String(e) });
+        }
         return true;
     }
 });
@@ -101,7 +114,8 @@ function detect_fields() {
 
     elements.forEach(function (el) {
         if (!is_visible(el)) return;
-        if (el.type === "hidden" || el.type === "password" || el.type === "submit" || el.type === "button" || el.type === "reset") return;
+        if (el.type === "hidden" || el.type === "password" || el.type === "submit" || el.type === "button" || el.type === "reset"
+            || el.type === "checkbox" || el.type === "radio" || el.type === "file" || el.type === "image") return;
 
         let label = find_label(el);
         let selector = generate_selector(el);
@@ -183,12 +197,16 @@ function generate_selector(el) {
         }
     }
 
-    // tag[name="..."] if unique
+    // tag[name="..."] if unique (escape quotes/backslashes so the
+    // selector stays valid CSS for querySelector)
     if (el.name) {
-        let sel = el.tagName.toLowerCase() + '[name="' + el.name + '"]';
-        if (document.querySelectorAll(sel).length === 1) {
-            return sel;
-        }
+        let escapedName = el.name.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        let sel = el.tagName.toLowerCase() + '[name="' + escapedName + '"]';
+        try {
+            if (document.querySelectorAll(sel).length === 1) {
+                return sel;
+            }
+        } catch (e) { /* invalid selector — fall through to path-based */ }
     }
 
     // Build nth-of-type path from nearest ancestor with id
@@ -238,7 +256,9 @@ function try_auto_map(fields, preset) {
             let presetSelector = preset.fields[fieldKey];
             let selectors = presetSelector.split(",").map(function (s) { return s.trim(); });
             for (let i = 0; i < selectors.length; i++) {
-                let el = document.querySelector(selectors[i]);
+                let el = null;
+                try { el = document.querySelector(selectors[i]); }
+                catch (e) { continue; } // skip invalid selectors instead of killing the scan
                 if (el) {
                     // Find matching detected field
                     let genSel = generate_selector(el);
@@ -376,14 +396,21 @@ function grab_data(mappings) {
         zipcode: ""
     };
 
+    let matchedSelectors = 0;
+    let capturedValues = 0;
+
     for (let fieldKey in mappings) {
         let selector = mappings[fieldKey];
         if (!selector) continue;
-        let el = document.querySelector(selector);
+        let el = null;
+        try { el = document.querySelector(selector); }
+        catch (e) { continue; } // stale/invalid saved selector — skip, don't abort the grab
         if (!el) continue;
+        matchedSelectors++;
         let val = get_element_value(el);
         if (val && profile_data.hasOwnProperty(fieldKey)) {
             profile_data[fieldKey] = val;
+            capturedValues++;
         }
     }
 
@@ -402,25 +429,47 @@ function grab_data(mappings) {
             let dobInput = document.querySelector("input.otherInformationDateTimePicker");
             if (dobInput) profile_data.birthdate = dobInput.value || "";
         }
+        if (profile_data.birthdate) capturedValues++;
     }
 
-    // Special handling for Intruity OneLink DOB on Health/Life tab (tab4)
+    // Special handling for Intruity OneLink DOB on Health/Life tab (tab4).
+    // Content scripts run in an isolated world: page globals like
+    // Show_Tab_Panel are NOT visible here, but the DOM is shared — read the
+    // input directly, and fall back to a real DOM click on the tab (synthetic
+    // clicks DO trigger the page's own handlers).
     if (!profile_data.birthdate && window.location.href.includes("onelink.intruity.com")) {
-        let healthTab = document.querySelector("#tab4");
-        if (healthTab && typeof Show_Tab_Panel === "function") {
-            Show_Tab_Panel(4);
-            // Wait for DOM to update, then read DOB and save
-            setTimeout(function () {
-                let dobEl = document.querySelector("#Applicant_DOB");
-                if (dobEl && dobEl.value) {
-                    profile_data.birthdate = dobEl.value;
-                }
-                save_profile_data(profile_data);
-            }, 150);
-            return;
+        let dobEl = document.querySelector("#DOB, #Applicant_DOB");
+        if (dobEl && dobEl.value) {
+            profile_data.birthdate = dobEl.value;
+            capturedValues++;
+        } else {
+            let healthTab = document.querySelector("#tab4 a, #tab4");
+            if (healthTab) {
+                healthTab.click();
+                // Wait for the page's tab handler to render, then read DOB and save
+                setTimeout(function () {
+                    let lateDob = document.querySelector("#Applicant_DOB, #DOB");
+                    if (lateDob && lateDob.value) {
+                        profile_data.birthdate = lateDob.value;
+                        capturedValues++;
+                    }
+                    finish_grab(profile_data, matchedSelectors, capturedValues);
+                }, 250);
+                return;
+            }
         }
     }
 
+    finish_grab(profile_data, matchedSelectors, capturedValues);
+}
+
+// Guard: a grab that matched nothing must not overwrite a previously
+// grabbed contact in storage with empty strings.
+function finish_grab(profile_data, matchedSelectors, capturedValues) {
+    if (!matchedSelectors && !capturedValues) {
+        chrome.runtime.sendMessage({ from: "content", subject: "grabEmpty" });
+        return;
+    }
     save_profile_data(profile_data);
 }
 
@@ -443,10 +492,17 @@ function save_profile_data(profile_data) {
 
 function get_element_value(el) {
     if (el.tagName === "SELECT") {
+        if (el.selectedIndex < 0) return "";
         let opt = el.options[el.selectedIndex];
-        return opt ? opt.textContent.trim() || opt.value : "";
+        // A selected option with an empty value is a placeholder
+        // ("-- Select State --") — not contact data.
+        if (!opt || opt.value === "") return "";
+        return opt.textContent.trim() || opt.value;
     }
     if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
+        if (el.type === "checkbox" || el.type === "radio") {
+            return el.checked ? el.value : "";
+        }
         return el.value || "";
     }
     // For spans, divs, etc.

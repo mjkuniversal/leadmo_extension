@@ -8,7 +8,7 @@ Browser extension (Chrome + Firefox, Manifest V3) that scrapes contact data from
 
 ```
 leadmo/
-├── LeadMomentum-Chrome/                # Chrome extension source (v5.1)
+├── LeadMomentum-Chrome/                # Chrome extension source
 │   ├── manifest.json                   # MV3 manifest (service_worker)
 │   ├── background.js                   # Service worker - GHL API calls
 │   ├── content.js                      # Content script - field detection, pick mode, DOM scraping
@@ -22,7 +22,7 @@ leadmo/
 │       ├── logo.png                    # LeadMomentum logo
 │       ├── select2.min.js              # Select2 4.1.0-rc.0
 │       └── select2.min.css             # Select2 styles
-├── LeadMomentum-Firefox/               # Firefox extension source (v5.1)
+├── LeadMomentum-Firefox/               # Firefox extension source
 │   ├── manifest.json                   # MV3 manifest (background scripts, gecko settings)
 │   ├── background.js                   # Background script (same as Chrome, polyfill handles compat)
 │   ├── content.js                      # Content script (same as Chrome)
@@ -63,6 +63,7 @@ leadmo/
 | 5.1 | Persistent popup window (stays open until closed via X button). Fixed content script injection on iframe-heavy pages (VICIdial). |
 | 5.4 | Added `#Applicant_DOB` selector for Intruity OneLink Health/Life tab DOB field. |
 | 5.5 | Auto-clicks Health/Life tab on Intruity OneLink to grab DOB when not on Lead tab. |
+| 5.6 | Bug-sweep release: contact create switched to `POST /contacts/upsert` (handles duplicates), empty fields stripped from payload, all API failures surfaced in popup + persisted (`lm_last_send_result`), re-injection before every scan/grab (fixes post-navigation staleness), frame-aware scanning (iframe CRMs), removed invalid `:contains()` preset selector, DOM-built dropdown options (quote-safe), Intruity DOB read via DOM instead of page global, empty-grab guard (fixes Firefox `ReferenceError`, ports guard to Chrome), Firefox programmatic injection restored, popup window survives service-worker restarts (`storage.session`) and retargets on icon click. |
 
 ## Architecture
 
@@ -75,7 +76,7 @@ Popup (popup/script.js)
   ↕ chrome.runtime.sendMessage (sender.id verified)
 Background (background.js)             # service_worker (Chrome) / scripts (Firefox)
   ↕ fetch()
-GoHighLevel REST API (rest.gohighlevel.com/v1/)
+GoHighLevel v2 REST API (services.leadconnectorhq.com)
 ```
 
 All `onMessage` listeners verify `sender.id === chrome.runtime.id` to reject messages from other extensions.
@@ -91,12 +92,12 @@ All `onMessage` listeners verify `sender.id === chrome.runtime.id` to reject mes
 | content → popup | `fieldsDetected` | Return detected fields with labels and suggested mappings |
 | content → popup | `loadContactData` | Notify data is ready in storage |
 | popup → background | `makeApiCall` / `getWorkflowsAndTags` | Fetch workflows + tags from GHL |
-| popup → background | `makeApiCall` / `sendToLeadmomentum` | Create contact in GHL |
-| popup → background | `makeApiCall` / `addWorkflow` | Create contact + add to workflow |
-| background → popup | `loadWorkflows` | Return workflow list |
-| background → popup | `loadTags` | Return tag list |
-| background → popup | `contactCreated` | Confirm contact creation |
-| background → popup | `workflowAdded` | Confirm workflow assignment |
+| popup → background | `makeApiCall` / `sendToLeadmomentum` | Upsert contact in GHL |
+| popup → background | `makeApiCall` / `addWorkflow` | Upsert contact + add to workflow |
+| content → popup | `grabEmpty` | Grab matched nothing — storage left untouched, status shown |
+| background → popup | `contactCreated` / `contactFailed` | Contact upsert outcome (failure includes status + message) |
+| background → popup | `workflowAdded` / `workflowFailed` | Workflow assignment outcome |
+| background → popup | `retarget` | Icon clicked while popup open — rebind popup to new tab ID/domain and rescan |
 
 ### Data Storage (chrome.storage.local)
 
@@ -109,6 +110,7 @@ All `onMessage` listeners verify `sender.id === chrome.runtime.id` to reject mes
 | `landlinescrubber_api_key` | `string` | Phone verification API key |
 | `lm_domain_mappings` | `{domain: {field: {selector}}}` | Saved per-domain field mappings |
 | `lm_pick_state` | `{active, fieldKey, domain, result}` | Transient click-to-select state |
+| `lm_last_send_result` | `{ok, message, ts}` | Last contact/workflow send outcome — shown on next popup open if it failed while popup was closed |
 | `survey_url` | `string` | User's GHL survey base URL |
 
 **Security note:** API keys and contact PII are stored unencrypted in `chrome.storage.local`. This storage is sandboxed to the extension but is not encrypted at rest. Data persists until the extension is uninstalled or storage is manually cleared.

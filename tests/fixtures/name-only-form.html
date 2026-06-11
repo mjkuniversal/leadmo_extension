@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Name-attribute-only Form</title>
+    <!-- No ids anywhere: generate_selector falls back to tag[name="..."]
+         selectors, which contain double quotes — regression coverage for
+         the <option value> corruption bug. -->
+</head>
+<body>
+    <h1>Lead</h1>
+    <form>
+        <div>
+            <label>First Name <input type="text" name="first_name" value="Quota" /></label>
+        </div>
+        <div>
+            <label>Last Name <input type="text" name="last_name" value="Crusher" /></label>
+        </div>
+        <div>
+            <label>Phone <input type="tel" name="phone" value="555-222-3333" /></label>
+        </div>
+        <div>
+            <label>Email <input type="email" name="email" value="quota@example.com" /></label>
+        </div>
+    </form>
+</body>
+</html>

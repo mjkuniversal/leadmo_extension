@@ -1,43 +1,83 @@
 const GHL_BASE = "https://services.leadconnectorhq.com";
 
-// Open popup as a persistent window instead of browser popup
-let popupWindowId = null;
-
+// Open popup as a persistent window instead of browser popup.
+// The window id is persisted in chrome.storage.session so it survives MV3
+// service-worker restarts — an in-memory variable resets when the worker
+// idles out (~30s), which used to spawn duplicate popup windows.
 chrome.action.onClicked.addListener(function (tab) {
-    // If window already exists, focus it
-    if (popupWindowId !== null) {
-        chrome.windows.get(popupWindowId, function (win) {
-            if (chrome.runtime.lastError || !win) {
-                popupWindowId = null;
-                openPopupWindow(tab);
-            } else {
-                chrome.windows.update(popupWindowId, { focused: true });
-            }
-        });
-    } else {
-        openPopupWindow(tab);
-    }
+    chrome.storage.session.get(["popupWindowId"], function (data) {
+        let popupWindowId = data.popupWindowId;
+        if (popupWindowId !== undefined && popupWindowId !== null) {
+            chrome.windows.get(popupWindowId, function (win) {
+                if (chrome.runtime.lastError || !win) {
+                    openPopupWindow(tab);
+                } else {
+                    chrome.windows.update(popupWindowId, { focused: true });
+                    // Rebind the popup to the tab the user is actually on —
+                    // this click just re-granted activeTab for it.
+                    notify_popup({
+                        from: "background",
+                        subject: "retarget",
+                        tabId: tab.id,
+                        domain: get_hostname(tab.url)
+                    });
+                }
+            });
+        } else {
+            openPopupWindow(tab);
+        }
+    });
 });
+
+function get_hostname(url) {
+    try { return new URL(url || "").hostname || ""; }
+    catch (e) { return ""; }
+}
 
 function openPopupWindow(tab) {
     let url = chrome.runtime.getURL("popup/index.html")
         + "?tabId=" + tab.id
-        + "&domain=" + encodeURIComponent(new URL(tab.url || "").hostname || "");
+        + "&domain=" + encodeURIComponent(get_hostname(tab.url));
     chrome.windows.create({
         url: url,
         type: "popup",
         width: 520,
         height: 750
     }, function (win) {
-        popupWindowId = win.id;
+        if (win) chrome.storage.session.set({ popupWindowId: win.id });
     });
 }
 
 chrome.windows.onRemoved.addListener(function (windowId) {
-    if (windowId === popupWindowId) {
-        popupWindowId = null;
-    }
+    chrome.storage.session.get(["popupWindowId"], function (data) {
+        if (windowId === data.popupWindowId) {
+            chrome.storage.session.remove("popupWindowId");
+        }
+    });
 });
+
+// Fire-and-forget message to extension pages. Reading lastError in the
+// callback prevents "Receiving end does not exist" noise when no popup
+// window is open (outcomes are also persisted via record_send_result).
+function notify_popup(msg) {
+    chrome.runtime.sendMessage(msg, function () {
+        void chrome.runtime.lastError;
+    });
+}
+
+// Persist the outcome of the last send so the popup can show a failure the
+// user missed while the window was closed.
+function record_send_result(ok, message) {
+    chrome.storage.local.set({
+        lm_last_send_result: { ok: ok, message: message, ts: Date.now() }
+    });
+}
+
+function format_api_error(status, body) {
+    let msg = body && body.message;
+    if (Array.isArray(msg)) msg = msg.join("; ");
+    return (msg ? String(msg) : "Unexpected API response") + " (HTTP " + status + ")";
+}
 
 chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     if (sender.id !== chrome.runtime.id) return;
@@ -110,7 +150,14 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
                     create_contact(tag, workflow_id, selected_api_key, selected_location_id);
                 }
             } else {
-                sendResponse({});
+                if (msg.subject2 === 'getWorkflowsAndTags') {
+                    sendResponse({ workflows: [], tags: [], error: 'no-api-key' });
+                } else {
+                    sendResponse({});
+                    let failMsg = "No account selected — add and select an API key first.";
+                    record_send_result(false, failMsg);
+                    notify_popup({ from: 'background', subject: 'contactFailed', status: 0, message: failMsg });
+                }
             }
         });
         return true; // keep message channel open for async sendResponse
@@ -151,14 +198,27 @@ function create_contact(tag, workflow_id, selected_api_key, selected_location_id
             "state": profile_data["state"],
             "country": "US",
             "postalCode": profile_data["zipcode"],
-            "companyName": "",
-            "website": "",
             "tags": tags,
-            "source": "public api",
-            "customFields": []
+            "source": "public api"
         };
 
-        fetch(GHL_BASE + "/contacts/", {
+        // GHL v2 validates every field that is PRESENT in the payload: an
+        // empty-string email/phone/dateOfBirth fails validation and 422s the
+        // whole request. Omit anything empty — locationId is the only
+        // required field.
+        Object.keys(create_contact_data).forEach(function (key) {
+            if (key === "locationId") return;
+            let v = create_contact_data[key];
+            if (v === "" || v === undefined || v === null
+                || (Array.isArray(v) && v.length === 0)) {
+                delete create_contact_data[key];
+            }
+        });
+
+        // Upsert instead of create: GHL locations commonly disallow duplicate
+        // contacts, making POST /contacts/ return 400 on every re-send of a
+        // known lead. Upsert updates the existing contact and returns its id.
+        fetch(GHL_BASE + "/contacts/upsert", {
             headers: {
                 'Authorization': 'Bearer ' + selected_api_key,
                 'Content-Type': 'application/json',
@@ -166,27 +226,31 @@ function create_contact(tag, workflow_id, selected_api_key, selected_location_id
             },
             method: 'POST',
             body: JSON.stringify(create_contact_data)
-        }).then(response => response.json()).then(responseData => {
-            if (responseData["contact"] && responseData["contact"]["id"]) {
+        }).then(async function (response) {
+            let responseData = {};
+            try { responseData = await response.json(); } catch (e) { }
+            if (response.ok && responseData["contact"] && responseData["contact"]["id"]) {
+                record_send_result(true, "Contact sent to LeadMomentum");
+                notify_popup({ from: 'background', subject: 'contactCreated' });
                 if (workflow_id) {
                     add_to_workflow(responseData["contact"]["id"], workflow_id, selected_api_key);
                 }
-
-                chrome.runtime.sendMessage({
-                    from: 'background',
-                    subject: 'contactCreated'
-                });
+            } else {
+                let message = format_api_error(response.status, responseData);
+                record_send_result(false, "Contact NOT created: " + message);
+                notify_popup({ from: 'background', subject: 'contactFailed', status: response.status, message: message });
             }
-
-        }).catch(error => {
-            console.log(error);
+        }).catch(function () {
+            let message = "Network error — could not reach GoHighLevel.";
+            record_send_result(false, "Contact NOT created: " + message);
+            notify_popup({ from: 'background', subject: 'contactFailed', status: 0, message: message });
         });
     });
 }
 
 function add_to_workflow(contact_id, workflow_id, selected_api_key) {
     let current_datetime = String(new Date().toISOString()).slice(0, 19) + "+00:00";
-    let add_workflow_data = {"eventStartTime": current_datetime};
+    let add_workflow_data = { "eventStartTime": current_datetime };
     fetch(GHL_BASE + "/contacts/" + contact_id + "/workflow/" + workflow_id, {
         headers: {
             'Authorization': 'Bearer ' + selected_api_key,
@@ -195,13 +259,20 @@ function add_to_workflow(contact_id, workflow_id, selected_api_key) {
         },
         method: 'POST',
         body: JSON.stringify(add_workflow_data)
-    }).then(response => response.text()).then(() => {
-        chrome.runtime.sendMessage({
-            from: 'background',
-            subject: 'workflowAdded'
-        });
-    }).catch(error => {
-        console.log(error);
+    }).then(async function (response) {
+        if (response.ok) {
+            record_send_result(true, "Workflow added");
+            notify_popup({ from: 'background', subject: 'workflowAdded' });
+        } else {
+            let body = {};
+            try { body = await response.json(); } catch (e) { }
+            let message = format_api_error(response.status, body);
+            record_send_result(false, "Workflow NOT added: " + message);
+            notify_popup({ from: 'background', subject: 'workflowFailed', status: response.status, message: message });
+        }
+    }).catch(function () {
+        let message = "Network error — could not reach GoHighLevel.";
+        record_send_result(false, "Workflow NOT added: " + message);
+        notify_popup({ from: 'background', subject: 'workflowFailed', status: 0, message: message });
     });
 }
-

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>VanillaSoft-shaped Contact View</title>
+    <!-- Served as /vanillasoft.net-contact.html so window.location.href
+         contains "vanillasoft.net" and the VanillaSoft preset activates.
+         Mirrors the read-only contact view: DOB lives in an info table
+         (no .otherInformationDateTimePicker input present). -->
+</head>
+<body>
+    <h1>Contact</h1>
+    <form>
+        <div>
+            <label for="FirstName">First Name</label>
+            <input type="text" id="FirstName" name="FirstName" value="Vana" />
+        </div>
+        <div>
+            <label for="LastName">Last Name</label>
+            <input type="text" id="LastName" name="LastName" value="Soft" />
+        </div>
+        <div>
+            <label for="Email">Email</label>
+            <input type="email" id="Email" name="Email" value="vana.soft@example.com" />
+        </div>
+        <div>
+            <input type="text" placeholder="Phone Number" value="(555) 987-6543" />
+        </div>
+    </form>
+    <table>
+        <tr>
+            <td class="tableInfolabel">DOB</td>
+            <td><span class="spanField">03/15/1985</span></td>
+        </tr>
+    </table>
+</body>
+</html>
