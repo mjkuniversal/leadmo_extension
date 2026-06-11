@@ -569,6 +569,28 @@ div[style="clear:both;"] {
     background: #ffffff;
 }
 
+/* ── Toast notifications (visible above both views) ──────── */
+
+#lm_toast {
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    z-index: 10000;
+    pointer-events: none;
+}
+
+#lm_toast #notification_message {
+    margin: 0 0 6px 0;
+    padding: 10px 14px;
+    background: #1c2536;
+    color: #ffffff;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
 /* ── Scrollbar styling ─────────────────────────────────── */
 
 ::-webkit-scrollbar {

@@ -208,9 +208,15 @@ test.describe("v5.6 Regressions", () => {
     const errorText = await popupPage.locator("#notification_message").textContent();
     expect(errorText).toContain("email must be an email");
 
-    // Outcome is also persisted for popups opened later
-    const lastResult = await getStorageLocal(popupPage, "lm_last_send_result");
-    expect(lastResult.ok).toBe(false);
+    // Show-once (v5.7): the failure was displayed live, so the persisted
+    // copy is consumed — reopening the popup must NOT re-show a stale error.
+    await popupPage.waitForFunction(async () => {
+      return new Promise((resolve) => {
+        chrome.storage.local.get(["lm_last_send_result"], (d) =>
+          resolve(d.lm_last_send_result === undefined)
+        );
+      });
+    }, { timeout: 5_000 });
   });
 
   test("empty profile fields are stripped from the upsert payload", async ({
@@ -357,6 +363,174 @@ test.describe("v5.6 Regressions", () => {
     // Restoring on open must not auto-switch to the survey iframe view
     await expect(popupPage.locator("#wrapper")).toBeVisible();
     await expect(popupPage.locator("#survey_frame_container")).toBeHidden();
+  });
+
+  // ════ v5.7 regressions ═══════════════════════════════════════
+
+  // ── Tags must never ride the upsert (it REPLACES the contact's tags) ──
+
+  test("tag is applied additively via /contacts/{id}/tags, never in the upsert payload", async ({
+    context,
+    popupPage,
+  }) => {
+    let upsertPayload: any = null;
+    let tagsPayload: any = null;
+    await context.route("**/contacts/upsert", (route) => {
+      upsertPayload = route.request().postDataJSON();
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ new: true, contact: { id: "c-77" } }),
+      });
+    });
+    await context.route("**/contacts/c-77/tags", (route) => {
+      tagsPayload = route.request().postDataJSON();
+      route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    });
+    await context.route("**/workflows/**", (route) => {
+      route.fulfill({
+        status: 200, contentType: "application/json",
+        body: JSON.stringify({ workflows: [] }),
+      });
+    });
+    await context.route("**/locations/*/tags", (route) => {
+      route.fulfill({
+        status: 200, contentType: "application/json",
+        body: JSON.stringify({ tags: [{ id: "t-1", name: "Hot Lead", locationId: "loc-1" }] }),
+      });
+    });
+
+    await setStorageLocal(popupPage, {
+      api_keys: [["Test", "fake-key", "loc-1"]],
+      selected_api_key: "fake-key",
+      selected_location_id: "loc-1",
+      profile_data: { first_name: "Taggy", last_name: "Lead", phone: "+15550003333" },
+    });
+    await popupPage.reload();
+    await popupPage.waitForSelector("#tags_dd option[value='Hot Lead']", {
+      state: "attached", timeout: 5_000,
+    });
+
+    await popupPage.evaluate(() => {
+      (document.getElementById("tags_dd") as HTMLSelectElement).value = "Hot Lead";
+    });
+    await popupPage.locator("#send_to_leadmomentum").click();
+
+    await popupPage.waitForFunction(() => {
+      const el = document.getElementById("notification_message");
+      return el && el.textContent?.includes("Contact created");
+    }, { timeout: 5_000 });
+    await expect.poll(() => tagsPayload, { timeout: 5_000 }).toBeTruthy();
+
+    expect(upsertPayload).toBeTruthy();
+    expect(upsertPayload).not.toHaveProperty("tags");
+    expect(tagsPayload).toEqual({ tags: ["Hot Lead"] });
+  });
+
+  // ── Matched-but-blank grab must not clobber stored contact ────
+
+  test("grabbing a blank form (selectors match, values empty) keeps the stored contact", async ({
+    context,
+    extensionId,
+    fixtureBaseUrl,
+    popupPage,
+  }) => {
+    await setStorageLocal(popupPage, {
+      profile_data: { first_name: "Keep", last_name: "Me2", phone: "+15550001112" },
+    });
+
+    const { popup, formPage } = await openScannedPopup(
+      context, extensionId, fixtureBaseUrl, "blank-form.html"
+    );
+
+    await popup.locator("#grab_data_btn").click();
+
+    await popup.waitForFunction(() => {
+      const status = document.getElementById("mapping_status");
+      return status && status.textContent?.includes("No data captured");
+    }, { timeout: 5_000 });
+
+    const profile = await getStorageLocal(popup, "profile_data");
+    expect(profile.first_name).toBe("Keep");
+    expect(profile.last_name).toBe("Me2");
+
+    await popup.close();
+    await formPage.close();
+  });
+
+  // ── Partial workflows/tags failure keeps the good half ────────
+
+  test("workflows fetch failure still populates tags and clears stale workflows", async ({
+    context,
+    popupPage,
+  }) => {
+    await context.route("**/workflows/**", (route) => {
+      route.fulfill({
+        status: 401, contentType: "application/json",
+        body: JSON.stringify({ message: "Unauthorized" }),
+      });
+    });
+    await context.route("**/locations/*/tags", (route) => {
+      route.fulfill({
+        status: 200, contentType: "application/json",
+        body: JSON.stringify({ tags: [{ id: "t-9", name: "Survivor Tag", locationId: "loc-1" }] }),
+      });
+    });
+
+    await setStorageLocal(popupPage, {
+      api_keys: [["Test", "fake-key", "loc-1"]],
+      selected_api_key: "fake-key",
+      selected_location_id: "loc-1",
+    });
+    await popupPage.reload();
+
+    // The succeeded half loads…
+    await popupPage.waitForSelector("#tags_dd option[value='Survivor Tag']", {
+      state: "attached", timeout: 5_000,
+    });
+    // …the failed half is rebuilt empty (no stale entries), and the error
+    // names the failing endpoint.
+    const wfOptions = await popupPage.locator("#workflows_dd option").count();
+    expect(wfOptions).toBe(0);
+    const errorText = await popupPage.locator("#notification_message").textContent();
+    expect(errorText).toContain("API error");
+    expect(errorText).toContain("401");
+  });
+
+  // ── Send outcome stays visible when the survey view auto-shows ──
+
+  test("contact-created toast remains visible after survey auto-show hides the wrapper", async ({
+    context,
+    popupPage,
+  }) => {
+    await context.route("**/contacts/upsert", (route) => {
+      route.fulfill({
+        status: 200, contentType: "application/json",
+        body: JSON.stringify({ new: true, contact: { id: "c-1" } }),
+      });
+    });
+
+    await setStorageLocal(popupPage, {
+      api_keys: [["Test", "fake-key", "loc-1"]],
+      selected_api_key: "fake-key",
+      selected_location_id: "loc-1",
+      survey_url: "https://forms.example.com/s",
+      profile_data: { first_name: "Vis", last_name: "Ible", phone: "+15551112222" },
+    });
+    await popupPage.reload();
+
+    await popupPage.locator("#send_to_leadmomentum").click();
+
+    await popupPage.waitForFunction(() => {
+      const el = document.getElementById("notification_message");
+      return el && el.textContent?.includes("Contact created");
+    }, { timeout: 5_000 });
+
+    // Survey view took over the main UI…
+    await expect(popupPage.locator("#survey_frame_container")).toBeVisible();
+    await expect(popupPage.locator("#wrapper")).toBeHidden();
+    // …but the toast lives outside #wrapper and stays visible.
+    await expect(popupPage.locator("#notification_message")).toBeVisible();
   });
 
   // ── Quote-safe workflow/tag dropdowns ──────────────────────────

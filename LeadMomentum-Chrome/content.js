@@ -463,11 +463,17 @@ function grab_data(mappings) {
     finish_grab(profile_data, matchedSelectors, capturedValues);
 }
 
-// Guard: a grab that matched nothing must not overwrite a previously
-// grabbed contact in storage with empty strings.
+// Guard: a grab that captured no values must not overwrite a previously
+// grabbed contact in storage with empty strings. This includes the
+// matched-but-blank case (AJAX CRMs render inputs before lead data loads,
+// and new-lead forms are legitimately empty).
 function finish_grab(profile_data, matchedSelectors, capturedValues) {
-    if (!matchedSelectors && !capturedValues) {
-        chrome.runtime.sendMessage({ from: "content", subject: "grabEmpty" });
+    if (!capturedValues) {
+        chrome.runtime.sendMessage({
+            from: "content",
+            subject: "grabEmpty",
+            matchedSelectors: matchedSelectors
+        });
         return;
     }
     save_profile_data(profile_data);

@@ -10,8 +10,7 @@ function notify_popup(msg) {
 }
 
 // Persist the outcome of the last send so the popup can show a failure the
-// user missed while the popup was closed (Firefox's anchored popup closes
-// on any blur, so this matters even mid-operation).
+// user missed while the window was closed.
 function record_send_result(ok, message) {
     chrome.storage.local.set({
         lm_last_send_result: { ok: ok, message: message, ts: Date.now() }
@@ -64,11 +63,15 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
                             catch (e) { return { _error: 'invalid-json' }; }
                         }).catch(() => ({ _error: 'network' }))
                     ]).then(([workflowData, tagData]) => {
-                        let error = workflowData._error || tagData._error || null;
+                        // Report each failure separately so the popup can
+                        // still populate the half that succeeded (e.g. a
+                        // token with contacts scope but no workflows scope).
                         sendResponse({
                             workflows: workflowData['workflows'] || [],
                             tags: tagData['tags'] || [],
-                            error: error
+                            workflowsError: workflowData._error || null,
+                            tagsError: tagData._error || null,
+                            error: workflowData._error || tagData._error || null
                         });
                     }).catch(error => {
                         console.log(error);
@@ -76,22 +79,18 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
                     });
                 }
 
-                if (msg.subject2 === 'sendToLeadmomentum') {
+                if (msg.subject2 === 'sendToLeadmomentum' || msg.subject2 === 'addWorkflow') {
                     sendResponse({});
-                    let tag = "";
-                    if (msg.tag) {
-                        tag = msg.tag;
+                    // Guard here too — without a locationId the upsert 422s
+                    // with a raw validation message instead of guidance.
+                    if (!selected_location_id) {
+                        let locMsg = "Location ID is missing — re-add your account with a Location ID.";
+                        record_send_result(false, "Contact NOT created: " + locMsg);
+                        notify_popup({ from: 'background', subject: 'contactFailed', status: 0, message: locMsg });
+                        return;
                     }
-                    create_contact(tag, "", selected_api_key, selected_location_id);
-                }
-
-                if (msg.subject2 === 'addWorkflow') {
-                    sendResponse({});
-                    let tag = "";
-                    if (msg.tag) {
-                        tag = msg.tag;
-                    }
-                    let workflow_id = msg.workflow_id;
+                    let tag = msg.tag || "";
+                    let workflow_id = (msg.subject2 === 'addWorkflow') ? msg.workflow_id : "";
                     create_contact(tag, workflow_id, selected_api_key, selected_location_id);
                 }
             } else {
@@ -110,11 +109,6 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
 });
 
 function create_contact(tag, workflow_id, selected_api_key, selected_location_id) {
-    let tags = [];
-    if (tag) {
-        tags.push(tag);
-    }
-
     chrome.storage.local.get(['profile_data'], function (data) {
         let profile_data = {}
 
@@ -143,9 +137,12 @@ function create_contact(tag, workflow_id, selected_api_key, selected_location_id
             "state": profile_data["state"],
             "country": "US",
             "postalCode": profile_data["zipcode"],
-            "tags": tags,
             "source": "public api"
         };
+        // NOTE: no "tags" in the upsert payload — GHL upsert REPLACES the
+        // contact's tag list wholesale, so sending ["new tag"] would wipe
+        // every tag the contact already has. Tags are added additively via
+        // POST /contacts/{id}/tags after the upsert succeeds.
 
         // GHL v2 validates every field that is PRESENT in the payload: an
         // empty-string email/phone/dateOfBirth fails validation and 422s the
@@ -177,8 +174,12 @@ function create_contact(tag, workflow_id, selected_api_key, selected_location_id
             if (response.ok && responseData["contact"] && responseData["contact"]["id"]) {
                 record_send_result(true, "Contact sent to LeadMomentum");
                 notify_popup({ from: 'background', subject: 'contactCreated' });
+                let contact_id = responseData["contact"]["id"];
+                if (tag) {
+                    add_tag(contact_id, tag, selected_api_key);
+                }
                 if (workflow_id) {
-                    add_to_workflow(responseData["contact"]["id"], workflow_id, selected_api_key);
+                    add_to_workflow(contact_id, workflow_id, selected_api_key);
                 }
             } else {
                 let message = format_api_error(response.status, responseData);
@@ -190,6 +191,31 @@ function create_contact(tag, workflow_id, selected_api_key, selected_location_id
             record_send_result(false, "Contact NOT created: " + message);
             notify_popup({ from: 'background', subject: 'contactFailed', status: 0, message: message });
         });
+    });
+}
+
+// Additive tag application — leaves the contact's existing tags intact.
+function add_tag(contact_id, tag, selected_api_key) {
+    fetch(GHL_BASE + "/contacts/" + contact_id + "/tags", {
+        headers: {
+            'Authorization': 'Bearer ' + selected_api_key,
+            'Content-Type': 'application/json',
+            'Version': '2021-07-28'
+        },
+        method: 'POST',
+        body: JSON.stringify({ tags: [tag] })
+    }).then(async function (response) {
+        if (!response.ok) {
+            let body = {};
+            try { body = await response.json(); } catch (e) { }
+            let message = format_api_error(response.status, body);
+            record_send_result(false, "Tag NOT added: " + message);
+            notify_popup({ from: 'background', subject: 'tagFailed', status: response.status, message: message });
+        }
+    }).catch(function () {
+        let message = "Network error — could not reach GoHighLevel.";
+        record_send_result(false, "Tag NOT added: " + message);
+        notify_popup({ from: 'background', subject: 'tagFailed', status: 0, message: message });
     });
 }
 
