@@ -6,6 +6,7 @@ import {
   getStorageLocal,
   setStorageLocal,
   clearStorageLocal,
+  grabAndWaitForProfile,
 } from "./fixtures";
 import type { Page, BrowserContext } from "@playwright/test";
 
@@ -32,24 +33,6 @@ async function waitForScan(popup: Page) {
       status.textContent !== "Scanning..."
     );
   }, { timeout: 10_000 });
-}
-
-/**
- * Poll storage for profile_data inside a single evaluate so the wait and the
- * read can't race each other. Returns the profile object or null on timeout.
- */
-async function grabAndWaitForProfile(popup: Page): Promise<any> {
-  await popup.locator("#grab_data_btn").click();
-  return popup.evaluate(async () => {
-    for (let i = 0; i < 40; i++) {
-      const p: any = await new Promise((res) =>
-        chrome.storage.local.get(["profile_data"], (d) => res(d.profile_data))
-      );
-      if (p && p.first_name) return p;
-      await new Promise((r) => setTimeout(r, 250));
-    }
-    return null;
-  });
 }
 
 async function openScannedPopup(

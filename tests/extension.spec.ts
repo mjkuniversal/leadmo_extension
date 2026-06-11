@@ -6,6 +6,7 @@ import {
   getStorageLocal,
   setStorageLocal,
   clearStorageLocal,
+  grabAndWaitForProfile,
 } from "./fixtures";
 
 test.describe("LeadMomentum Chrome Extension", () => {
@@ -109,19 +110,9 @@ test.describe("LeadMomentum Chrome Extension", () => {
         return status && status.textContent?.includes("fields found");
       }, { timeout: 10_000 });
 
-      // Click "Grab Data"
-      await popup.locator("#grab_data_btn").click();
-
-      // Wait for profile_data to appear in storage
-      await popup.waitForFunction(async () => {
-        return new Promise((resolve) => {
-          chrome.storage.local.get(["profile_data"], (data) => {
-            resolve(data.profile_data && data.profile_data.first_name);
-          });
-        });
-      }, { timeout: 5_000 });
-
-      const profileData = await getStorageLocal(popup, "profile_data");
+      // Grab and read in one in-page poll — a separate wait-then-read can
+      // transiently see {} even after the write committed (see fixtures.ts)
+      const profileData = await grabAndWaitForProfile(popup);
       expect(profileData).toBeTruthy();
       expect(profileData.first_name).toBe("John");
       expect(profileData.last_name).toBe("Doe");
@@ -348,17 +339,8 @@ test.describe("LeadMomentum Chrome Extension", () => {
         return status && status.textContent?.includes("fields found");
       }, { timeout: 10_000 });
 
-      await popup.locator("#grab_data_btn").click();
-
-      await popup.waitForFunction(async () => {
-        return new Promise((resolve) => {
-          chrome.storage.local.get(["profile_data"], (data) => {
-            resolve(data.profile_data && data.profile_data.phone);
-          });
-        });
-      }, { timeout: 5_000 });
-
-      const profileData = await getStorageLocal(popup, "profile_data");
+      const profileData = await grabAndWaitForProfile(popup);
+      expect(profileData).toBeTruthy();
       // format_phone: 10 digits → "+1" + phone
       expect(profileData.phone).toBe("+15551234567");
 
