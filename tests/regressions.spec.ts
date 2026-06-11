@@ -497,6 +497,33 @@ test.describe("v5.6 Regressions", () => {
     expect(errorText).toContain("401");
   });
 
+  // ── GHL-style wrapper-label markup must auto-map ───────────────
+
+  test("auto-maps and grabs a GHL-style contact panel (no name/id/label wiring)", async ({
+    context,
+    extensionId,
+    fixtureBaseUrl,
+  }) => {
+    const { popup, formPage } = await openScannedPopup(
+      context, extensionId, fixtureBaseUrl, "ghl-contact-panel.html"
+    );
+
+    // The old label discovery found nothing on this markup: inputs have no
+    // name/id/for/aria and placeholder "--" — "N fields found, 0 auto-mapped".
+    const statusText = await popup.locator("#mapping_status").textContent();
+    expect(statusText).toMatch(/4 auto-mapped/);
+
+    const profile = await grabAndWaitForProfile(popup);
+    expect(profile).toBeTruthy();
+    expect(profile.first_name).toBe("Ghl");
+    expect(profile.last_name).toBe("Mapper");
+    expect(profile.email).toBe("ghl.mapper@example.com");
+    expect(profile.phone).toBe("+15558675309");
+
+    await popup.close();
+    await formPage.close();
+  });
+
   // ── Send outcome stays visible when the survey view auto-shows ──
 
   test("contact-created toast remains visible after survey auto-show hides the wrapper", async ({

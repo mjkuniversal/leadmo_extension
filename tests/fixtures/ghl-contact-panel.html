@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>GHL-style Contact Panel</title>
+    <!-- Mirrors GoHighLevel's contact detail markup (June 2026): inputs have
+         NO name, NO id, NO label[for], NO aria-label, placeholder "--".
+         The label is a div inside the .hr-form-item wrapper. -->
+</head>
+<body>
+    <h1>Contact Details</h1>
+
+    <div class="hr-form-item hr-form-item--medium-size">
+        <div class="hr-form-item__label-wrap"><div class="hr-form-item__label">First name</div></div>
+        <div class="hr-form-item-blank"><div class="hr-input-container"><div class="hr-input"><div class="hr-input-wrapper"><div class="hr-input__input">
+            <input class="hr-input__input-el" type="text" placeholder="--" value="Ghl">
+        </div></div></div></div></div>
+    </div>
+
+    <div class="hr-form-item hr-form-item--medium-size">
+        <div class="hr-form-item__label-wrap"><div class="hr-form-item__label">Last name</div></div>
+        <div class="hr-form-item-blank"><div class="hr-input-container"><div class="hr-input"><div class="hr-input-wrapper"><div class="hr-input__input">
+            <input class="hr-input__input-el" type="text" placeholder="--" value="Mapper">
+        </div></div></div></div></div>
+    </div>
+
+    <div class="hr-form-item hr-form-item--medium-size">
+        <div class="hr-form-item__label-wrap"><div class="hr-form-item__label">Email</div></div>
+        <div class="hr-form-item-blank"><div class="hr-input-container"><div class="hr-input"><div class="hr-input-wrapper"><div class="hr-input__input">
+            <input class="hr-input__input-el" type="text" placeholder="--" value="ghl.mapper@example.com">
+        </div></div></div></div></div>
+    </div>
+
+    <div class="hr-form-item hr-form-item--medium-size">
+        <div class="hr-form-item__label-wrap"><div class="hr-form-item__label">Phone</div></div>
+        <div class="hr-form-item-blank"><div class="hr-input-container"><div class="hr-input"><div class="hr-input-wrapper"><div class="hr-input__input">
+            <input class="hr-input__input-el hr-input-phone" type="tel" placeholder="--" value="(555) 867-5309">
+        </div></div></div></div></div>
+    </div>
+
+    <!-- Non-contact field with the same structure: must NOT steal a mapping -->
+    <div class="hr-form-item hr-form-item--medium-size">
+        <div class="hr-form-item__label-wrap"><div class="hr-form-item__label">Sale Disposition</div></div>
+        <div class="hr-form-item-blank"><div class="hr-input-container"><div class="hr-input"><div class="hr-input-wrapper"><div class="hr-input__input">
+            <input class="hr-input__input-el" type="text" placeholder="--" value="">
+        </div></div></div></div></div>
+    </div>
+</body>
+</html>
