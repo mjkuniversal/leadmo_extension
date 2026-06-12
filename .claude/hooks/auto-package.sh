@@ -1,8 +1,8 @@
 #!/bin/bash
 # Auto-package hook for LeadMomentum extension
 # PostToolUse hook: runs after Edit/Write on source files
-# - Archives old zips to archive-zips/
-# - Creates new zips named with current version from manifest.json
+# - Archives old zips (repo root) to LeadMomentum-Chrome/archive-zips/
+# - Creates new zips at the repo root named with the manifest version
 # - Debounced: max once per 5 minutes
 
 set -euo pipefail
@@ -12,7 +12,10 @@ FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
 
 [ -z "$FILE_PATH" ] && exit 0
 
-PROJECT="/home/mk/projects/extensions/leadmo"
+# Resolve the project root from the harness env, falling back to this
+# script's own location (.claude/hooks/ -> repo root) so the hook survives
+# repo moves without editing hardcoded paths again.
+PROJECT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 STATE_FILE="/tmp/leadmo-auto-package-state"
 DEBOUNCE_SECONDS=300
 
@@ -54,38 +57,38 @@ fi
 CR_VER=$(jq -r '.version' "$PROJECT/LeadMomentum-Chrome/manifest.json")
 FF_VER=$(jq -r '.version' "$PROJECT/LeadMomentum-Firefox/manifest.json")
 
-CR_DIR="$PROJECT/LeadMomentum-Chrome"
-FF_DIR="$PROJECT/LeadMomentum-Firefox"
+ARCHIVE_DIR="$PROJECT/LeadMomentum-Chrome/archive-zips"
+mkdir -p "$ARCHIVE_DIR"
 
-# Archive old Chrome zips (any zip in the directory that isn't the current version)
-for zip in "$CR_DIR"/LeadMomentum-Chrome\ v*.zip; do
+# Archive any old-version zips at the repo root (both browsers share one
+# archive dir). Store zips live at the root — that is where check-archive.sh
+# looks and where store uploads are picked up from.
+for zip in "$PROJECT"/LeadMomentum-Chrome\ v*.zip; do
   [ -f "$zip" ] || continue
   case "$zip" in
     *"v${CR_VER}.zip") ;; # current version, skip
-    *) mv "$zip" "$CR_DIR/archive-zips/" ;;
+    *) mv "$zip" "$ARCHIVE_DIR/" ;;
   esac
 done
-
-# Archive old Firefox zips
-for zip in "$FF_DIR"/LeadMomentum-Firefox\ v*.zip; do
+for zip in "$PROJECT"/LeadMomentum-Firefox\ v*.zip; do
   [ -f "$zip" ] || continue
   case "$zip" in
     *"v${FF_VER}.zip") ;; # current version, skip
-    *) mv "$zip" "$FF_DIR/archive-zips/" ;;
+    *) mv "$zip" "$ARCHIVE_DIR/" ;;
   esac
 done
 
-# Package Chrome
+# Package Chrome (exclude dotfiles, archives at any depth, stray zips)
 CR_ZIP="LeadMomentum-Chrome v${CR_VER}.zip"
-cd "$CR_DIR"
-rm -f "$CR_ZIP"
-zip -qr "$CR_ZIP" . -x ".*" -x "archive-*/*" -x "*.zip"
+cd "$PROJECT/LeadMomentum-Chrome"
+rm -f "$PROJECT/$CR_ZIP"
+zip -qr "$PROJECT/$CR_ZIP" . -x ".*" -x "archive-*" -x "archive-*/*" -x "archive-*/*/*" -x "*.zip"
 
 # Package Firefox
 FF_ZIP="LeadMomentum-Firefox v${FF_VER}.zip"
-cd "$FF_DIR"
-rm -f "$FF_ZIP"
-zip -qr "$FF_ZIP" . -x ".*" -x "archive-*/*" -x "*.zip"
+cd "$PROJECT/LeadMomentum-Firefox"
+rm -f "$PROJECT/$FF_ZIP"
+zip -qr "$PROJECT/$FF_ZIP" . -x ".*" -x "archive-*" -x "archive-*/*" -x "archive-*/*/*" -x "*.zip"
 
 # Record timestamp
 date +%s > "$STATE_FILE"

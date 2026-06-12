@@ -185,6 +185,27 @@ function find_label(el) {
         if (prevCell) return prevCell.textContent.trim();
     }
 
+    // Strategy 6: component-library wrappers (e.g. GoHighLevel's contact
+    // panel "hr-form-item"): the input has NO name/id/for/aria wiring and a
+    // junk placeholder ("--"); the label is an element inside the nearest
+    // ancestor that wraps ONLY this control. Verified live against the GHL
+    // contact detail page June 2026.
+    let node = el.parentElement;
+    for (let depth = 0; node && depth < 8; depth++, node = node.parentElement) {
+        let controls = node.querySelectorAll("input, select, textarea");
+        if (controls.length === 1) {
+            let lbl = node.querySelector('label, [class*="label"]');
+            if (lbl) {
+                let text = lbl.textContent.trim();
+                if (text && text !== "--") return text;
+            }
+        } else if (controls.length > 1) {
+            // Wrapper spans multiple fields — any label here is a section
+            // title, not this field's label.
+            break;
+        }
+    }
+
     // Fallback: placeholder, name, or id
     return el.placeholder || el.name || el.id || "";
 }
@@ -463,11 +484,17 @@ function grab_data(mappings) {
     finish_grab(profile_data, matchedSelectors, capturedValues);
 }
 
-// Guard: a grab that matched nothing must not overwrite a previously
-// grabbed contact in storage with empty strings.
+// Guard: a grab that captured no values must not overwrite a previously
+// grabbed contact in storage with empty strings. This includes the
+// matched-but-blank case (AJAX CRMs render inputs before lead data loads,
+// and new-lead forms are legitimately empty).
 function finish_grab(profile_data, matchedSelectors, capturedValues) {
-    if (!matchedSelectors && !capturedValues) {
-        chrome.runtime.sendMessage({ from: "content", subject: "grabEmpty" });
+    if (!capturedValues) {
+        chrome.runtime.sendMessage({
+            from: "content",
+            subject: "grabEmpty",
+            matchedSelectors: matchedSelectors
+        });
         return;
     }
     save_profile_data(profile_data);

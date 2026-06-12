@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Echo Survey</title>
+    <style>
+        body { font-family: sans-serif; padding: 16px; }
+        td { padding: 4px 10px; border: 1px solid #ccc; }
+    </style>
+</head>
+<body>
+    <h2>Survey received these URL parameters:</h2>
+    <table id="params"></table>
+    <script>
+        // Mimics what a GHL survey does: read its own location.search and
+        // prefill fields whose Query Key matches a param name.
+        const t = document.getElementById("params");
+        const sp = new URLSearchParams(window.location.search);
+        let n = 0;
+        for (const [k, v] of sp.entries()) {
+            const row = document.createElement("tr");
+            const k1 = document.createElement("td");
+            const v1 = document.createElement("td");
+            k1.textContent = k;
+            v1.textContent = v;
+            v1.id = "param_" + k;
+            row.appendChild(k1); row.appendChild(v1);
+            t.appendChild(row);
+            n++;
+        }
+        if (!n) {
+            document.body.insertAdjacentText("beforeend", "NO PARAMETERS RECEIVED");
+        }
+    </script>
+</body>
+</html>

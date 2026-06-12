@@ -1,22 +1,25 @@
 /* ============================================================
-   LeadMomentum Popup v5.6
+   LeadMomentum Popup v5.8
    - Field detection + mapping dropdowns
    - Click-to-select via detached window (stays open during pick)
    - Per-domain mapping persistence
    - Existing API key / workflow / tag / phone check preserved
    ============================================================ */
 
-// Maps profile_data keys → GHL survey query parameter names
-// Note: GHL compound address field and date fields don't reliably pre-fill via URL params.
-// Address sub-fields (street_address, city, state, postal_code) are included but may not work
-// depending on the survey builder's Query Key configuration.
+// Maps profile_data keys → GHL survey query parameter names. Array values
+// send the same data under multiple keys. Verified June 2026 against the
+// live "Everything Survey": GHL's standard hidden Street Address field uses
+// query key "address" (not "street_address") — we send both so either
+// builder configuration captures it. All other standard hidden fields
+// (first_name, last_name, phone, email, date_of_birth, city, state,
+// postal_code) match these names exactly.
 const SURVEY_PARAM_MAP = {
     first_name: "first_name",
     last_name: "last_name",
     phone: "phone",
     email: "email",
     birthdate: "date_of_birth",
-    address: "street_address",
+    address: ["street_address", "address"],
     city: "city",
     state: "state",
     zipcode: "postal_code"
@@ -43,10 +46,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
 
     if ((msg.from === 'background') && (msg.subject === 'contactCreated')) {
         sendResponse({});
-        $("#tags_box").prepend('<p id="notification_message">Contact created succesfully</p>');
-        setTimeout(function () {
-            $("#notification_message").remove();
-        }, 2500);
+        show_toast("Contact created successfully", 2500);
 
         // Auto-refresh survey with fresh form for next submission
         chrome.storage.local.get(['profile_data'], function (data) {
@@ -57,46 +57,73 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
 
     if ((msg.from === 'background') && (msg.subject === 'workflowAdded')) {
         sendResponse({});
-        $("#workflows_box").prepend('<p id="notification_message">Workflow added successfully</p>');
-        setTimeout(function () {
-            $("#notification_message").remove();
-        }, 2500);
+        show_toast("Workflow added successfully", 2500);
     }
 
     if ((msg.from === 'background') && (msg.subject === 'contactFailed')) {
         sendResponse({});
         show_send_error("Contact NOT created: " + (msg.message || ("error " + msg.status)));
+        consume_send_result();
     }
 
     if ((msg.from === 'background') && (msg.subject === 'workflowFailed')) {
         sendResponse({});
-        $("#notification_message").remove();
-        $('<p id="notification_message"></p>')
-            .text("Workflow NOT added: " + (msg.message || ("error " + msg.status)))
-            .prependTo("#workflows_box");
-        setTimeout(function () { $("#notification_message").remove(); }, 6000);
+        show_toast("Workflow NOT added: " + (msg.message || ("error " + msg.status)), 6000);
+        consume_send_result();
+    }
+
+    if ((msg.from === 'background') && (msg.subject === 'tagFailed')) {
+        sendResponse({});
+        show_toast("Tag NOT added: " + (msg.message || ("error " + msg.status)), 6000);
+        consume_send_result();
     }
 
     if ((msg.from === 'content') && (msg.subject === 'grabEmpty')) {
         sendResponse({});
-        show_mapping_status("No data captured — check your field mappings and rescan.");
+        if (msg.matchedSelectors) {
+            show_mapping_status("No data captured — the form fields are empty. Previous contact kept.");
+        } else {
+            show_mapping_status("No data captured — check your field mappings and rescan.");
+        }
     }
 
     // Icon clicked while this window is open: rebind to the user's current tab
     if ((msg.from === 'background') && (msg.subject === 'retarget')) {
         sendResponse({});
+        // A pick on the old tab must not survive the rebind — it would
+        // strand that page in pick mode and save the picked selector under
+        // the new tab's domain.
+        if (localPickActive && currentTabId) {
+            chrome.tabs.sendMessage(currentTabId, { subject: "cancelPicking" }, { frameId: currentFrameId }, function () {
+                void chrome.runtime.lastError;
+            });
+            chrome.storage.local.remove("lm_pick_state");
+            localPickActive = false;
+        }
         currentTabId = msg.tabId;
         currentDomain = msg.domain || "";
         scan_page();
     }
 });
 
-function show_send_error(message) {
+// Toast container sits OUTSIDE #wrapper so send/workflow outcomes stay
+// visible when the survey view auto-shows (which hides #wrapper).
+// Keeps id="notification_message" on the message element for compatibility.
+function show_toast(message, ms) {
     $("#notification_message").remove();
     $('<p id="notification_message"></p>')
-        .text(message || "Send failed.")
-        .prependTo("#tags_box");
-    setTimeout(function () { $("#notification_message").remove(); }, 6000);
+        .text(message || "")
+        .appendTo("#lm_toast");
+    setTimeout(function () { $("#notification_message").remove(); }, ms || 4000);
+}
+
+function show_send_error(message) {
+    show_toast(message || "Send failed.", 6000);
+}
+
+// A failure already shown live must not be re-shown on the next popup open.
+function consume_send_result() {
+    chrome.storage.local.remove("lm_last_send_result");
 }
 
 // ── Document ready ──────────────────────────────────────────
@@ -120,8 +147,33 @@ $(document).ready(function () {
             return;
         }
         currentDomain = urlParams.get("domain") || "";
-        check_pick_result(function () {
-            scan_page(); // scan_page injects the content script itself
+        // The anchored-branch chrome:// guard never runs in detached mode —
+        // check the target tab here too so we don't attempt injection into
+        // browser-internal pages. If the URL is unreadable, proceed; the
+        // injection failure path already reports cleanly.
+        chrome.tabs.get(currentTabId, function (tab) {
+            void chrome.runtime.lastError;
+            let url = tab && tab.url;
+            if (url && /^(chrome|chrome-extension|about|moz-extension|edge):/.test(url)) {
+                show_mapping_status("Cannot scan this page.");
+                return;
+            }
+            check_pick_result(function () {
+                scan_page(); // scan_page injects the content script itself
+            });
+            // Pick handed off from an anchored popup (Firefox: the anchored
+            // popup dies the moment the detached window opens, so it cannot
+            // reliably send startPicking itself — this window starts it).
+            let pickField = urlParams.get("pickField");
+            if (pickField) {
+                localPickActive = true;
+                inject_content_script(currentTabId, function () {
+                    chrome.tabs.sendMessage(currentTabId, {
+                        subject: "startPicking",
+                        fieldKey: pickField
+                    }, { frameId: currentFrameId });
+                });
+            }
         });
     } else {
         chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
@@ -159,8 +211,12 @@ $(document).ready(function () {
             load_contact_data(true); // true = don't auto-switch to the survey view
         }
         let res = data.lm_last_send_result;
-        if (res && !res.ok && (Date.now() - (res.ts || 0)) < 120000) {
-            show_send_error(res.message);
+        if (res) {
+            // Show-once: surface a recent failure the user missed, then
+            // always clear the entry (stale and ok entries must not linger).
+            if (!res.ok && (Date.now() - (res.ts || 0)) < 120000) {
+                show_send_error(res.message);
+            }
             chrome.storage.local.remove("lm_last_send_result");
         }
     });
@@ -185,19 +241,23 @@ $(document).ready(function () {
     $("#grab_data_btn").click(function () {
         let mappings = collect_mappings();
         // Re-inject first: navigation destroys the content script, and the
-        // double-injection guard makes this idempotent.
+        // double-injection guard makes this idempotent. Re-pick the frame
+        // too — navigation also renumbers frames, so a frameId captured by
+        // the last scan can point at a frame that no longer exists.
         inject_content_script(currentTabId, function () {
-            chrome.tabs.sendMessage(currentTabId, {
-                subject: "grabData",
-                mappings: mappings
-            }, { frameId: currentFrameId }, function (response) {
-                if (chrome.runtime.lastError || !response) {
-                    show_mapping_status("Grab failed — click Scan and try again.");
-                    return;
-                }
-                if (response.status === "error") {
-                    show_mapping_status("Grab error: " + response.error);
-                }
+            pick_best_frame(function () {
+                chrome.tabs.sendMessage(currentTabId, {
+                    subject: "grabData",
+                    mappings: mappings
+                }, { frameId: currentFrameId }, function (response) {
+                    if (chrome.runtime.lastError || !response) {
+                        show_mapping_status("Grab failed — click Scan and try again.");
+                        return;
+                    }
+                    if (response.status === "error") {
+                        show_mapping_status("Grab error: " + response.error);
+                    }
+                });
             });
         });
         return false;
@@ -228,22 +288,27 @@ $(document).ready(function () {
         let row = $(this).closest("tr");
         let fieldKey = row.data("field");
 
-        localPickActive = true;
         chrome.storage.local.set({
             lm_pick_state: { active: true, fieldKey: fieldKey, domain: currentDomain, result: null }
         }, function () {
-            inject_content_script(currentTabId, function () {
-                chrome.tabs.sendMessage(currentTabId, {
-                    subject: "startPicking",
-                    fieldKey: fieldKey
-                }, { frameId: currentFrameId });
-            });
-
-            if (!isDetachedWindow) {
-                // Open a detached window so the UI stays visible during pick
+            if (isDetachedWindow) {
+                localPickActive = true;
+                inject_content_script(currentTabId, function () {
+                    chrome.tabs.sendMessage(currentTabId, {
+                        subject: "startPicking",
+                        fieldKey: fieldKey
+                    }, { frameId: currentFrameId });
+                });
+            } else {
+                // Anchored popup (Firefox default_popup, or a tab): it dies
+                // as soon as the detached window takes focus, so injecting
+                // and messaging from here is a race that can silently lose
+                // the startPicking send. Hand the pick to the detached
+                // window via URL param — it owns the whole lifecycle.
                 let detachedUrl = chrome.runtime.getURL("popup/index.html")
                     + "?tabId=" + currentTabId
-                    + "&domain=" + encodeURIComponent(currentDomain);
+                    + "&domain=" + encodeURIComponent(currentDomain)
+                    + "&pickField=" + encodeURIComponent(fieldKey);
                 chrome.windows.create({
                     url: detachedUrl,
                     type: "popup",
@@ -314,10 +379,8 @@ $(document).ready(function () {
             selected_location_id: selected_location_id
         }, function () {
             fetch_workflows_and_tags();
-            $("#api_key_items").prepend('<p id="notification_message">' + $("#api_keys_dd option:selected").text() + ' account selected</p>');
-            setTimeout(function () {
-                $("#notification_message").remove();
-            }, 2500);
+            // .text(), never string-HTML: the account name is user input
+            show_toast($("#api_keys_dd option:selected").text() + " account selected", 2500);
         });
         return false;
     });
@@ -338,10 +401,7 @@ $(document).ready(function () {
         $("#notification_message").remove();
         let workflow_id = $("#workflows_dd").val();
         if (!workflow_id) {
-            $('<p id="notification_message"></p>')
-                .text("Select a workflow first. If the list is empty, verify your API key has workflow access.")
-                .prependTo("#workflows_box");
-            setTimeout(function () { $("#notification_message").remove(); }, 4000);
+            show_toast("Select a workflow first. If the list is empty, verify your API key has workflow access.", 4000);
             return false;
         }
         let tag = $("#tags_dd").val();
@@ -441,12 +501,7 @@ $(document).ready(function () {
                 $("#survey_status").text("Saved survey URL is invalid.");
                 return;
             }
-            for (let key in SURVEY_PARAM_MAP) {
-                let value = profile[key];
-                if (value) {
-                    surveyUrl.searchParams.set(SURVEY_PARAM_MAP[key], value);
-                }
-            }
+            apply_survey_params(surveyUrl, profile);
 
             currentSurveyUrl = surveyUrl.href;
             $("#survey_frame").attr("src", currentSurveyUrl);
@@ -509,17 +564,28 @@ function inject_content_script(tabId, callback) {
 }
 
 // ── Pick the frame with the most form fields ────────────────
+// The count must mirror detect_fields' filter (visible, text-bearing
+// fields only) — counting raw inputs lets a chat-widget iframe full of
+// hidden inputs outscore the actual lead form. Ties prefer the top frame.
 function pick_best_frame(callback) {
     chrome.scripting.executeScript({
         target: { tabId: currentTabId, allFrames: true },
         func: function () {
-            return document.querySelectorAll("input, select, textarea").length;
+            let count = 0;
+            document.querySelectorAll("input, select, textarea").forEach(function (el) {
+                if (el.type === "hidden" || el.type === "password" || el.type === "submit"
+                    || el.type === "button" || el.type === "reset" || el.type === "checkbox"
+                    || el.type === "radio" || el.type === "file" || el.type === "image") return;
+                if (!el.offsetParent && el.style.position !== "fixed") return;
+                count++;
+            });
+            return count;
         }
     }).then(function (results) {
         let best = { frameId: 0, count: -1 };
         (results || []).forEach(function (r) {
             let count = r.result || 0;
-            if (count > best.count) {
+            if (count > best.count || (count === best.count && r.frameId === 0)) {
                 best = { frameId: r.frameId, count: count };
             }
         });
@@ -532,9 +598,12 @@ function pick_best_frame(callback) {
 }
 
 // ── Scan page for fields ────────────────────────────────────
+let scanInFlight = false; // live pick results are buffered while true
+
 function scan_page() {
     if (!currentTabId) return;
     show_mapping_status("Scanning...");
+    scanInFlight = true;
     // Always re-inject: navigation destroys the content script, and the
     // injection guard makes this idempotent.
     inject_content_script(currentTabId, function () {
@@ -542,6 +611,17 @@ function scan_page() {
             send_detect_fields(0);
         });
     });
+}
+
+// Every scan exit path must run this: a pick completed during the scan (or
+// pending from a closed window) would otherwise be wiped by the dropdown
+// rebuild — or dropped entirely when the scan fails.
+function finish_scan_attempt() {
+    scanInFlight = false;
+    if (pendingPickResult) {
+        apply_pick_result(pendingPickResult.fieldKey, pendingPickResult.result);
+        pendingPickResult = null;
+    }
 }
 
 function send_detect_fields(retryCount) {
@@ -552,15 +632,18 @@ function send_detect_fields(retryCount) {
                 setTimeout(function () { send_detect_fields(retryCount + 1); }, 300);
             } else {
                 show_mapping_status("Cannot scan this page (content script not loaded).");
+                finish_scan_attempt();
             }
             return;
         }
         if (!response || !response.fields) {
             show_mapping_status("No fields detected.");
+            finish_scan_attempt();
             return;
         }
         if (response.error) {
             show_mapping_status("Scan error: " + response.error);
+            finish_scan_attempt();
             return;
         }
 
@@ -579,13 +662,10 @@ function send_detect_fields(retryCount) {
                 let mapped = Object.keys(autoMap).length;
                 show_mapping_status(detectedFields.length + " fields found, " + mapped + " auto-mapped.");
             }
-            // Apply a pick completed while this window was closed — after the
-            // scan, so populate_dropdowns can't wipe it (the old fixed-timer
-            // approach raced the scan).
-            if (pendingPickResult) {
-                apply_pick_result(pendingPickResult.fieldKey, pendingPickResult.result);
-                pendingPickResult = null;
-            }
+            // Apply a pick completed while this window was closed or while
+            // the scan was in flight — after the dropdown rebuild, so
+            // populate_dropdowns can't wipe it.
+            finish_scan_attempt();
         });
     });
 }
@@ -693,20 +773,35 @@ function apply_pick_result(fieldKey, result) {
 chrome.storage.onChanged.addListener(function (changes) {
     if (changes.lm_pick_state) {
         let state = changes.lm_pick_state.newValue;
-        if (!state || !state.active) localPickActive = false;
+        // Mirror both ways: an externally started pick (anchored-popup
+        // handoff) must set the flag too, or this window's unload cleanup
+        // never cancels the page's pick mode.
+        localPickActive = !!(state && state.active);
         if (state && !state.active && state.result && state.fieldKey) {
-            apply_pick_result(state.fieldKey, state.result);
+            if (scanInFlight) {
+                // Applying now would be wiped by the imminent dropdown
+                // rebuild — buffer it for finish_scan_attempt.
+                pendingPickResult = { fieldKey: state.fieldKey, result: state.result };
+            } else {
+                apply_pick_result(state.fieldKey, state.result);
+            }
             chrome.storage.local.remove("lm_pick_state");
         }
     }
 });
 
 // ── Check for pending pick result (from previous session) ────
-let pendingPickResult = null; // applied by send_detect_fields after the scan completes
+let pendingPickResult = null; // applied by finish_scan_attempt on every scan exit path
 
 function check_pick_result(callback) {
     chrome.storage.local.get(["lm_pick_state"], function (data) {
         let state = data.lm_pick_state;
+        if (state && state.active) {
+            // Adopt an in-progress pick so this window's unload cleanup
+            // owns it (otherwise closing mid-pick wedges the page in pick
+            // mode and the eventual click lands as a ghost result).
+            localPickActive = true;
+        }
         if (state && !state.active && state.result && state.fieldKey) {
             pendingPickResult = { fieldKey: state.fieldKey, result: state.result };
             chrome.storage.local.remove("lm_pick_state", function () {
@@ -761,29 +856,30 @@ function fetch_workflows_and_tags() {
         subject2: 'getWorkflowsAndTags'
     }, function (response) {
         if (chrome.runtime.lastError || !response) {
-            $("#notification_message").remove();
-            $("#tags_box").prepend('<p id="notification_message">Failed to load tags/workflows. Check your API key.</p>');
-            setTimeout(function () { $("#notification_message").remove(); }, 4000);
+            show_toast("Failed to load tags/workflows. Check your API key.", 4000);
             return;
         }
+        // ALWAYS rebuild both dropdowns with whatever arrived — even empty
+        // arrays. Returning early on error left the previous account's
+        // workflows/tags in the UI, and a partial failure (workflows scope
+        // missing, tags fine) used to blank both halves.
+        load_workflows(response.workflows || []);
+        load_tags(response.tags || []);
+
         if (response.error) {
-            $("#notification_message").remove();
-            let errorMsg = response.error === 'missing-location-id'
-                ? 'Location ID is missing. Re-add your account with a Location ID.'
-                : response.error === 'no-api-key'
-                ? 'No account selected. Add and select an API key below.'
-                : 'API error (' + response.error + '). Verify your API key and Location ID are valid.';
-            $('<p id="notification_message"></p>')
-                .text(errorMsg)
-                .prependTo('#tags_box');
-            setTimeout(function () { $("#notification_message").remove(); }, 4000);
-            return;
-        }
-        if (response.workflows) {
-            load_workflows(response.workflows);
-        }
-        if (response.tags) {
-            load_tags(response.tags);
+            let errorMsg;
+            if (response.error === 'missing-location-id') {
+                errorMsg = 'Location ID is missing. Re-add your account with a Location ID.';
+            } else if (response.error === 'no-api-key') {
+                errorMsg = 'No account selected. Add and select an API key below.';
+            } else {
+                let parts = [];
+                if (response.workflowsError) parts.push('workflows: ' + response.workflowsError);
+                if (response.tagsError) parts.push('tags: ' + response.tagsError);
+                let detail = parts.length ? parts.join(', ') : response.error;
+                errorMsg = 'API error (' + detail + '). Verify your API key and Location ID are valid.';
+            }
+            show_toast(errorMsg, 4000);
         }
     });
 }
@@ -815,9 +911,15 @@ function load_api_keys() {
         $(".lm-setup-notice").remove();
 
         for (let i = 0; i < api_keys.length; i++) {
-            let locationId = api_keys[i][2] || '';
-            let option = '<option value="' + api_keys[i][1] + '" data-location-id="' + locationId + '">' + api_keys[i][0] + '</option>';
-            $("#api_keys_dd").append(option);
+            // DOM-built, never string-concatenated: the account name is
+            // user input (HTML injection) and keys/names containing quotes
+            // would truncate a concatenated value attribute.
+            $("#api_keys_dd").append(
+                $("<option>")
+                    .val(api_keys[i][1])
+                    .attr("data-location-id", api_keys[i][2] || '')
+                    .text(api_keys[i][0])
+            );
         }
 
         if (!api_keys.length) {
@@ -848,14 +950,14 @@ function load_workflows(workflows) {
     if (existingWfDD.length && existingWfDD.data('select2')) existingWfDD.select2('destroy');
     existingWfDD.remove();
     $('<select id="workflows_dd"></select>').insertBefore($("#add_to_workflow"));
-    if (workflows.length) {
-        for (let i = 0; i < workflows.length; i++) {
-            $("#workflows_dd").append(
-                $("<option>").val(workflows[i]["id"]).text(workflows[i]["name"])
-            );
-        }
-        selectize_dd($("#workflows_dd"));
+    for (let i = 0; i < workflows.length; i++) {
+        $("#workflows_dd").append(
+            $("<option>").val(workflows[i]["id"]).text(workflows[i]["name"])
+        );
     }
+    // Selectize even when empty — skipping it left a bare native select
+    // after switching to an account with no workflows.
+    selectize_dd($("#workflows_dd"));
 }
 
 function load_tags(tags) {
@@ -863,14 +965,13 @@ function load_tags(tags) {
     if (existingTagDD.length && existingTagDD.data('select2')) existingTagDD.select2('destroy');
     existingTagDD.remove();
     $('<select id="tags_dd"><option value=""></option></select>').insertBefore($("#send_to_leadmomentum"));
-    if (tags.length) {
-        for (let i = 0; i < tags.length; i++) {
-            $("#tags_dd").append(
-                $("<option>").val(tags[i]["name"]).text(tags[i]["name"])
-            );
-        }
-        selectize_dd($("#tags_dd"));
+    for (let i = 0; i < tags.length; i++) {
+        $("#tags_dd").append(
+            $("<option>").val(tags[i]["name"]).text(tags[i]["name"])
+        );
     }
+    // Selectize even when empty — see load_workflows.
+    selectize_dd($("#tags_dd"));
 }
 
 function load_contact_data(skipSurveyAutoShow) {
@@ -901,6 +1002,20 @@ function load_contact_data(skipSurveyAutoShow) {
     });
 }
 
+// Set every mapped query param on the survey URL; array map values send
+// the same profile value under each listed key.
+function apply_survey_params(surveyUrl, profile) {
+    for (let key in SURVEY_PARAM_MAP) {
+        let value = profile[key];
+        if (!value) continue;
+        let paramNames = SURVEY_PARAM_MAP[key];
+        if (!Array.isArray(paramNames)) paramNames = [paramNames];
+        for (let i = 0; i < paramNames.length; i++) {
+            surveyUrl.searchParams.set(paramNames[i], value);
+        }
+    }
+}
+
 function refresh_survey_iframe(profile, skipAutoShow) {
     chrome.storage.local.get(["survey_url"], function (data) {
         let baseUrl = data.survey_url;
@@ -919,12 +1034,7 @@ function refresh_survey_iframe(profile, skipAutoShow) {
             if (surveyUrl.protocol !== "https:") return;
         } catch (e) { return; }
 
-        for (let key in SURVEY_PARAM_MAP) {
-            let value = profile[key];
-            if (value) {
-                surveyUrl.searchParams.set(SURVEY_PARAM_MAP[key], value);
-            }
-        }
+        apply_survey_params(surveyUrl, profile);
 
         currentSurveyUrl = surveyUrl.href;
         $("#survey_frame").attr("src", currentSurveyUrl);

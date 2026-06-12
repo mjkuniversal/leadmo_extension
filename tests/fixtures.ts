@@ -170,6 +170,32 @@ export async function openPopupForTab(
 }
 
 /**
+ * Click Grab Data, then poll storage for profile_data inside a single
+ * evaluate so the wait and the read can't race each other. Returns the
+ * profile object from the same chrome.storage.local.get() call that
+ * observed it, or null on timeout.
+ *
+ * Why one evaluate: a waitForFunction that polls storage via rAF plus a
+ * separate follow-up read can hit a Chromium read-consistency glitch where
+ * the follow-up get() transiently returns {} even though the data is
+ * committed (verified June 2026 with an onChanged tracer: single write,
+ * no removals, yet one read in between saw nothing).
+ */
+export async function grabAndWaitForProfile(popup: Page): Promise<any> {
+  await popup.locator("#grab_data_btn").click();
+  return popup.evaluate(async () => {
+    for (let i = 0; i < 40; i++) {
+      const p: any = await new Promise((res) =>
+        chrome.storage.local.get(["profile_data"], (d) => res(d.profile_data))
+      );
+      if (p && p.first_name) return p;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    return null;
+  });
+}
+
+/**
  * Read a value from chrome.storage.local via page.evaluate.
  * Must be called on an extension page (popup or background).
  */

@@ -64,6 +64,8 @@ leadmo/
 | 5.4 | Added `#Applicant_DOB` selector for Intruity OneLink Health/Life tab DOB field. |
 | 5.5 | Auto-clicks Health/Life tab on Intruity OneLink to grab DOB when not on Lead tab. |
 | 5.6 | Bug-sweep release: contact create switched to `POST /contacts/upsert` (handles duplicates), empty fields stripped from payload, all API failures surfaced in popup + persisted (`lm_last_send_result`), re-injection before every scan/grab (fixes post-navigation staleness), frame-aware scanning (iframe CRMs), removed invalid `:contains()` preset selector, DOM-built dropdown options (quote-safe), Intruity DOB read via DOM instead of page global, empty-grab guard (fixes Firefox `ReferenceError`, ports guard to Chrome), Firefox programmatic injection restored, popup window survives service-worker restarts (`storage.session`) and retargets on icon click. |
+| 5.7 | Review-driven hardening: **tags no longer sent in upsert payload** (GHL upsert replaces the tag list wholesale — wiped existing tags; now applied additively via `POST /contacts/{id}/tags`, failures surface as `tagFailed`), empty-grab guard covers matched-but-blank forms (AJAX CRMs pre-data), notifications moved to a fixed toast (`#lm_toast`) outside `#wrapper` so survey auto-show can't hide outcomes, partial workflows/tags fetch failure keeps the half that succeeded and account switch always rebuilds both dropdowns (no stale cross-account tag sends), pick lifecycle hardened (anchored→detached handoff via `&pickField=` URL param — fixes Firefox pick race; pick adoption on reopen; retarget cancels in-flight pick; live results buffered during scans and applied on all scan exit paths), `pick_best_frame` counts only visible text-bearing fields and prefers the top frame on ties, grab re-picks the frame after navigation, missing-location-id guard on send paths, `lm_last_send_result` is show-once (consumed on live display), detached window refuses browser-internal pages, icon double-click can't spawn duplicate windows, account dropdown options DOM-built (quote/HTML-safe). |
+| 5.8 | Survey address param sent as both `street_address` and `address` (GHL's standard hidden Street Address field uses query key `address` — verified live against the Everything Survey June 2026; contact data lands in the survey's HIDDEN fields, so an unfilled-looking survey is expected behavior). Wrapper-label discovery (Strategy 6 in `find_label`) for component-library markup with no name/id/for/aria wiring — makes GHL's own contact detail page auto-map (verified live June 2026). |
 
 ## Architecture
 
@@ -97,6 +99,7 @@ All `onMessage` listeners verify `sender.id === chrome.runtime.id` to reject mes
 | content → popup | `grabEmpty` | Grab matched nothing — storage left untouched, status shown |
 | background → popup | `contactCreated` / `contactFailed` | Contact upsert outcome (failure includes status + message) |
 | background → popup | `workflowAdded` / `workflowFailed` | Workflow assignment outcome |
+| background → popup | `tagFailed` | Additive tag apply (`POST /contacts/{id}/tags`) failed after a successful upsert |
 | background → popup | `retarget` | Icon clicked while popup open — rebind popup to new tab ID/domain and rescan |
 
 ### Data Storage (chrome.storage.local)
@@ -117,7 +120,7 @@ All `onMessage` listeners verify `sender.id === chrome.runtime.id` to reject mes
 
 ### Supported Sites
 
-Works on **any website** with form fields. Auto-detects inputs/selects/textareas and applies heuristic keyword matching (e.g., fields named "first_name", "fname", etc.). Users can manually map fields via click-to-select and save mappings per domain.
+Works on **any website** with form fields. Auto-detects inputs/selects/textareas and applies heuristic keyword matching (e.g., fields named "first_name", "fname", etc.). Labels are discovered via `for=`/parent-label/aria/sibling/table strategies plus a wrapper-label strategy for component-library markup whose inputs have no name/id/label wiring (covers GHL's own contact detail page). Users can manually map fields via click-to-select and save mappings per domain.
 
 #### Built-in Presets
 

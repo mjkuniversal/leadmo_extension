@@ -18,8 +18,10 @@ if [[ -z "$VERSION" || "$VERSION" == "null" ]]; then
     exit 0
 fi
 
-# Check for zip files at the root level that don't match current version
-LEADMO_DIR="/home/mk/projects/extensions/leadmo"
+# Check for zip files at the root level that don't match current version.
+# Root resolved from the harness env, falling back to this script's own
+# location (.claude/ -> repo root) so the hook survives repo moves.
+LEADMO_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 OLD_ZIPS=()
 
 for zip in "$LEADMO_DIR"/*.zip; do
