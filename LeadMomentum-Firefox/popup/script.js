@@ -1,5 +1,5 @@
 /* ============================================================
-   LeadMomentum Popup v5.7 (Firefox)
+   LeadMomentum Popup v5.8 (Firefox)
    - Field detection + mapping dropdowns
    - Click-to-select via detached window (stays open during pick)
    - Per-domain mapping persistence
