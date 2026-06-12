@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/home/mk/projects/extensions/leadmo/.claude/check-archive.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/check-archive.sh",
             "timeout": 10,
             "statusMessage": "Checking for unarchived versions..."
           }
