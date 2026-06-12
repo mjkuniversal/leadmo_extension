@@ -1,73 +1,59 @@
-# LeadMomentum Chrome Extension
+# LeadMomentum Browser Extension
 
-Import contact information from your CRM directly into [LeadMomentum](https://leadmomentum.com) (GoHighLevel).
+Import contact information from **any website** directly into [LeadMomentum](https://leadmomentum.com) (GoHighLevel). Chrome and Firefox, Manifest V3.
 
 ## Features
 
-- **One-click contact import** from VanillaSoft and Intruity OneLink
-- **Auto-scrapes** name, phone, email, address, and date of birth
-- **Tag contacts** during import using your GoHighLevel tags
-- **Add to workflows** automatically when importing
+- **Works on any site** — auto-detects form fields with heuristic mapping; click-to-select for manual field assignment, saved per domain
+- **Built-in presets** for VanillaSoft (`*.vanillasoft.net`) and Intruity OneLink (`*.onelink.intruity.com`)
+- **Auto-scrapes** name, phone, email, address, and date of birth — including GoHighLevel's own contact pages
+- **GHL survey integration** — opens your survey pre-filled with the scraped contact via URL parameters
+- **Tag contacts** (applied additively — existing tags are never overwritten) and **add to workflows** on import
 - **Phone verification** via LandlineScrubber (DNC check + line type detection)
 - **Multi-account support** — save and switch between multiple API keys
 
-## Supported CRMs
-
-| Platform | URL |
-|----------|-----|
-| VanillaSoft | `*.vanillasoft.net` |
-| Intruity OneLink | `*.onelink.intruity.com` |
-
 ## Installation
 
-Install from the [Chrome Web Store](https://chrome.google.com/webstore) (search "LeadMomentum").
-
-Requires Chrome 116 or later.
+- **Chrome:** [Chrome Web Store](https://chromewebstore.google.com/detail/leadmomentum/kfhclnlhochkkmeedbieadfdaakedgpl) (requires Chrome 116+)
+- **Firefox:** Firefox Add-ons / AMO (requires Firefox 127+)
 
 ### For Development
 
-1. Open `chrome://extensions/`
-2. Enable **Developer mode** (top right toggle)
-3. Click **Load unpacked**
-4. Select the `Chrome Extension/extension36 - need to update to this version/` folder
+- **Chrome:** `chrome://extensions/` → enable **Developer mode** → **Load unpacked** → select the `LeadMomentum-Chrome/` folder
+- **Firefox:** `about:debugging` → **This Firefox** → **Load Temporary Add-on** → select `LeadMomentum-Firefox/manifest.json`
 
 ## Setup
 
 1. Click the LeadMomentum extension icon in your toolbar
-2. Enter a name for your account and your **GoHighLevel API key**
+2. Enter an account name, your **GoHighLevel Private Integration Token**, and your **Location ID**
 3. Click **Add**, then **Select** the account from the dropdown
-4. (Optional) Enter your **LandlineScrubber API key** to enable phone verification
+4. (Optional) Paste your GHL **survey URL** and click **Save URL**
+5. (Optional) Enter your **LandlineScrubber API key** to enable phone verification
 
 ## Usage
 
-1. Navigate to a contact page in VanillaSoft or Intruity OneLink
-2. Click the LeadMomentum extension icon
-3. Verify the scraped contact data shown in the popup
-4. (Optional) Select a **tag** from the dropdown
-5. Click **Send To LeadMomentum** to create the contact
-6. (Optional) Select a **workflow** and click **Add to Workflow**
+1. Navigate to a page showing contact data (CRM, dialer, GHL contact page, web form)
+2. Click the LeadMomentum icon — the popup scans the page and auto-maps detected fields
+3. Adjust mappings if needed (dropdowns or **Pick** to click an element on the page), then **Grab Data**
+4. (Optional) Select a **tag**, then click **Send To LeadMomentum** to upsert the contact
+5. (Optional) Select a **workflow** and click **Add to Workflow**
+6. (Optional) **Open Survey** — loads your survey pre-filled with the grabbed contact
 
-### Phone Verification
-
-1. Enter your LandlineScrubber API key
-2. The phone number auto-fills from the scraped contact
-3. Click **Check** to see DNC status and line type
+> Note: GHL surveys typically capture the pre-filled contact data in **hidden fields** — the survey may look empty while the data is attached on submission.
 
 ## Privacy & Data Handling
 
 This extension handles personal contact information (names, phone numbers, email addresses, physical addresses, dates of birth). Data is:
 
-- **Stored locally** in Chrome extension storage, sandboxed to this extension
-- **Transmitted** only to GoHighLevel (contact creation) and LandlineScrubber (phone verification) via your own API keys
+- **Stored locally** in browser extension storage, sandboxed to this extension
+- **Transmitted** only to GoHighLevel (contact upsert) and LandlineScrubber (phone verification) via your own API keys
 - **Not collected** by the extension developer — all data stays between your browser and your API accounts
 - **Cleared** when the extension is uninstalled
 
 Use of this extension with CRM platforms is subject to those platforms' terms of service.
 
-## Version History
+## Development
 
-| Version | Changes |
-|---------|---------|
-| 1.2 | Added sender verification, explicit host_permissions, minimum Chrome version, cleaned up debug logging |
-| 1.1 | Added LandlineScrubber API integration |
-| 1.0 | Initial release |
+Tests (Playwright, headed Chrome required): `npx playwright test`
+
+See `CLAUDE.md` for architecture, message flow, packaging instructions, and the full version history.
